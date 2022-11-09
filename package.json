@@ -5,6 +5,7 @@
     "watch": "tailwindcss -i styles.css -o src/unfold/static/unfold/css/styles.css --watch --minify"
   },
   "dependencies": {
+    "nightwind": "^1.1.12",
     "tailwindcss": "^3.2.1"
   }
 }

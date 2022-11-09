@@ -1,9 +1,20 @@
 module.exports = {
+  darkMode: "class",
   content: [
     "./src/**/*.{html,py,js}",
   ],
   media: false,
   theme: {
+    // nightwind: {
+    //   colors: {
+    //     primary: {
+    //       50: "#caf0f8", // becomes primary-900 in dark mode
+    //       300: "#90e0ef", // becomes primary-600 in dark mode
+    //       600: "#0077b6", // becomes primary-300 in dark mode
+    //       900: "#03045e", // becomes primary-50 in dark mode
+    //     },
+    //   },
+    // },
     extend: {
       colors: {
         primary: {
@@ -53,5 +64,5 @@ module.exports = {
       textColor: ["hover"]
     }
   },
-  plugins: []
+  plugins: [require("nightwind")],
 }

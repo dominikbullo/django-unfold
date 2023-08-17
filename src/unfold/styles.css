@@ -5,6 +5,7 @@
 @tailwind utilities;
 
 html {
+  --color-primary-50: theme('colors.purple.50');
   --color-primary-100: theme('colors.purple.100');
   --color-primary-200: theme('colors.purple.200');
   --color-primary-300: theme('colors.purple.300');
@@ -85,11 +86,8 @@ select:after {
 }
 
 #page input[type=checkbox] {
-  @apply appearance-none bg-white block border border-gray-300 cursor-pointer h-4 relative rounded w-4 dark:bg-gray-700 dark:border-gray-500;
-}
-
-#page input[type=checkbox]:hover {
-  @apply border-gray-400;
+  @apply appearance-none bg-white block border border-gray-300 cursor-pointer h-4 relative rounded w-4 dark:bg-gray-700 dark:border-gray-500 hover:border-gray-400;
+  @apply focus:outline focus:outline-1 focus:outline-offset-2 focus:outline-primary-500
 }
 
 #page input[type=checkbox]:after {
@@ -134,7 +132,7 @@ table tr.selected {
  Datetime
  *******************************************************/
 .datetimeshortcuts {
-  @apply flex flex-row-reverse items-center text-0;
+  @apply absolute flex flex-row-reverse items-center right-0 text-0 top-px;
 }
 
 .datetimeshortcuts a {
@@ -142,11 +140,11 @@ table tr.selected {
 }
 
 .datetimeshortcuts a:first-child {
-  @apply ml-2 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200;
+  @apply hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200;
 }
 
 .datetimeshortcuts a:first-child:after {
-  @apply bg-white border flex h-9.5 items-center justify-center leading-none material-symbols-outlined py-2 rounded shadow-sm text-base text-center w-9.5 hover:text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:hover:text-white;
+  @apply border-l flex h-9 items-center justify-center leading-none material-symbols-outlined py-2 text-base text-center w-9 hover:text-gray-700 dark:border-gray-700 dark:hover:text-white;
   content: 'timer';
 }
 
@@ -155,11 +153,11 @@ table tr.selected {
 }
 
 .date-icon {
-  @apply block h-9.5 ml-2 text-gray-400 transition-all w-9.5 hover:text-gray-700 dark:text-gray-500 dark:hover:text-white;
+  @apply block h-9 text-gray-400 transition-all w-9 hover:text-gray-700 dark:text-gray-500 dark:hover:text-white;
 }
 
 .date-icon:after {
-  @apply bg-white border h-9.5 items-center justify-center leading-none material-symbols-outlined py-2 rounded shadow-sm text-base text-center w-9.5 hover:text-gray-700 dark:bg-gray-900 dark:border-gray-700;
+  @apply border-l h-9 items-center justify-center leading-none material-symbols-outlined py-2 text-base text-center w-9 hover:text-gray-700 dark:border-gray-700;
   content: 'edit';
 }
 
@@ -168,11 +166,11 @@ table tr.selected {
 }
 
 .clock-icon {
-  @apply block h-9.5 ml-2 w-9.5 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200;
+  @apply block h-9 ml-2 w-9 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200;
 }
 
 .clock-icon:after {
-  @apply bg-white border h-9.5 items-center justify-center material-symbols-outlined py-2 rounded shadow-sm text-base text-center w-9.5 hover:text-gray-700 dark:bg-gray-900 dark:border-gray-700 dark:hover:text-white;
+  @apply border-l h-9 items-center justify-center material-symbols-outlined py-2 text-base text-center w-9 hover:text-gray-700 dark:border-gray-700 dark:hover:text-white;
   content: 'edit';
 }
 
@@ -297,9 +295,7 @@ h3 span:nth-child(3) {
  Autocomplete
  *******************************************************/
 .select2.select2-container {
-  @apply border max-w-2xl rounded-md shadow-sm w-full dark:border-gray-700;
-
-  width: 100% !important;
+  @apply border max-w-2xl relative rounded-md shadow-sm !w-full dark:border-gray-700;
 }
 
 .errors .select2.select2-container {
@@ -354,7 +350,7 @@ h3 span:nth-child(3) {
 }
 
 .select2-container.select2-container--open .select2-dropdown {
-  @apply border border-gray-200 pb-2 shadow-sm dark:bg-gray-900 dark:border-gray-700;
+  @apply border-primary-600 ring ring-primary-300 pb-2 shadow-sm dark:bg-gray-900 dark:border-primary-700 after:block after:bg-white after:absolute after:border-l after:border-l-primary-600 after:border-r after:border-r-primary-600 after:h-1 after:-left-px after:-right-px after:-mt-1 after:top-0 dark:after:bg-gray-900 dark:after:border-l-primary-700 dark:after:border-r-primary-700 dark:ring-primary-700 dark:ring-opacity-50;
 }
 
 .select2-container.select2-container--open .select2-dropdown--below {
@@ -362,7 +358,7 @@ h3 span:nth-child(3) {
 }
 
 .select2-container.select2-container--open .select2-dropdown--above {
-  @apply rounded-b-none rounded-t-md;
+  @apply rounded-b-none rounded-t-md after:bottom-0 after:-mb-1 after:mt-0 after:top-auto;;
 }
 
 .select2-container.select2-container--admin-autocomplete .select2-results__option {
@@ -392,6 +388,10 @@ h3 span:nth-child(3) {
   @apply h-7 text-gray-500 text-sm;
 }
 
+.select2.select2-container--open {
+  @apply border-b-0 border-primary-600 relative ring ring-primary-300 dark:border-primary-700 dark:ring-primary-700 dark:ring-opacity-50;
+}
+
 /*******************************************************
  Collapsed
  *******************************************************/
@@ -414,8 +414,8 @@ fieldset.collapsed .collapse-toggle {
 /*******************************************************
  Calendar
  *******************************************************/
-.calendarbox {
-  @apply bg-white border rounded-md shadow-sm text-gray-500 text-sm w-80 z-50 dark:bg-gray-800 dark:border-gray-700;
+.calendarbox, .clockbox {
+  @apply bg-white border rounded-md shadow-sm text-gray-500 text-sm w-80 z-50 dark:bg-gray-800 dark:border-gray-700 !fixed !left-1/2 !top-1/2 -translate-x-1/2 -translate-y-1/2;
 }
 
 .calendar caption {

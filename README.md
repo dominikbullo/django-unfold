@@ -1,23 +1,34 @@
-![Screenshot - Objects Listing](https://github.com/unfoldadmin/django-unfold/raw/main/screenshot-1.jpg)
-
-![Screenshot - Login Page](https://github.com/unfoldadmin/django-unfold/raw/main/screenshot-2.jpg)
+![screenshot](https://github.com/unfoldadmin/django-unfold/assets/10785882/daef6e7e-e8a1-4142-8e4c-fa2a287978d2)
 
 ## Unfold Django Admin Theme
 
-Unfold is a new theme for Django Admin incorporating some most common practises for building full-fledged admin areas.
+[![Build](https://img.shields.io/github/actions/workflow/status/unfoldadmin/django-unfold/release.yml?style=for-the-badge)](https://github.com/unfoldadmin/django-unfold/actions?query=workflow%3Arelease)
+[![PyPI - Version](https://img.shields.io/pypi/v/django-unfold.svg?style=for-the-badge)](https://pypi.org/project/django-unfold/)
+![Code Style - Black](https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge)
+![Pre Commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white&style=for-the-badge)
+
+Unfold is theme for Django admin incorporating most common practises for building full-fledged admin areas. It is designed to work at the top of default administration provided by Django.
+
+Demo is available at [unfoldadmin.com](https://unfoldadmin.com).
+
+## Features
 
 - **Visual**: provides new user interface based on Tailwind CSS framework
-- **Sidebar:** simplifies definition of custom sidebar navigation
+- **Sidebar:** simplifies definition of custom sidebar navigation with icons
 - **Dark mode:** supports both light and dark mode versions
 - **Configuration:** most of the basic options can be changed in settings.py
 - **Dependencies:** completely based only on `django.contrib.admin`
-- **Filters:** custom widgets for filters (e.g. numeric filter)
 - **Actions:** multiple ways how to define actions within different parts of admin
+- **WYSIWYG:** built-in support for WYSIWYG (Trix)
+- **Numeric filters:** widgets for filtering number values
+- **Datetime filters:** widgets for filtering datetime values
+- **Dashboard:** helpers to bootstrap custom dashboard
+- **Tabs:** define custom tab navigations for models
+- **Colors:** possibility to override default color scheme
+- **Django import / export:** default support for this popular application
 
 ## Table of Contents
 
-- [Unfold Django Admin Theme](#unfold-django-admin-theme)
-- [Table of Contents](#table-of-contents)
 - [Installation](#installation)
 - [Configuration](#configuration)
   - [Available settings.py options](#available-settingspy-options)
@@ -292,15 +303,23 @@ class UserAdmin(ModelAdmin):
     @display(
         description=_("Status"),
         ordering="status",
-        label=True,
-        mapping={
-            UserStatus.ACTIVE: "success",
-            UserStatus.PENDING: "info",
-            UserStatus.INACTIVE: "warning",
-            UserStatus.CANCELLED: "danger",
+        label=True
+    )
+    def show_status_default_color(self, obj):
+        return obj.status
+
+
+    @display(
+        description=_("Status"),
+        ordering="status",
+        label={
+            UserStatus.ACTIVE: "success",  # green
+            UserStatus.PENDING: "info",  # blue
+            UserStatus.INACTIVE: "warning",  # orange
+            UserStatus.CANCELLED: "danger",  # red
         },
     )
-    def show_status(self, obj):
+    def show_status_customized_color(self, obj)
         return obj.status
 
     @display(description=_("Status with label"), ordering="status", label=True)
@@ -563,6 +582,7 @@ module.exports = {
   // In case custom colors are defined in UNFOLD["COLORS"]
   colors: {
     primary: {
+      50: "rgb(var(--color-primary-50) / <alpha-value>)",
       100: "rgb(var(--color-primary-100) / <alpha-value>)",
       200: "rgb(var(--color-primary-200) / <alpha-value>)",
       300: "rgb(var(--color-primary-300) / <alpha-value>)",
@@ -580,7 +600,7 @@ module.exports = {
 Once the configuration file is set, it is possible to compile new styles which can be loaded into admin by using **STYLES** key in **UNFOLD** dict.
 
 ```bash
-npx tailwindcss  -o your_project/static/css/styles.css --watch --minify
+npx tailwindcss -o your_project/static/css/styles.css --watch --minify
 ```
 
 ## Custom Admin Dashboard
@@ -636,7 +656,7 @@ At the moment project contains package.json with all dependencies required to co
 
 ```bash
 npm install
-npx tailwindcss -i styles.css -o src/unfold/static/unfold/css/styles.css --watch --minify
+npx tailwindcss -i src/unfold/styles.css -o src/unfold/static/unfold/css/styles.css --watch --minify
 
 npm run tailwind:watch # run after each change in code
 npm run tailwind:build # run once

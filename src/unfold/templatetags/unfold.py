@@ -1,7 +1,10 @@
-from typing import Any, Dict, Mapping, Union
+from typing import Any, Dict, List, Mapping, Optional, Union
 
-from django.template import Library, Node, TemplateSyntaxError
-from django.template.base import NodeList, Parser, Token
+from django import template
+from django.contrib.admin.helpers import AdminForm, Fieldset
+from django.forms import Field
+from django.template import Library, Node, RequestContext, TemplateSyntaxError
+from django.template.base import NodeList, Parser, Token, token_kwargs
 from django.template.loader import render_to_string
 from django.utils.safestring import SafeText
 
@@ -12,7 +15,7 @@ register = Library()
 def tab_list(context, opts) -> str:
     tabs = None
 
-    for tab in context.get("tab_list"):
+    for tab in context.get("tab_list", []):
         if str(opts) in tab["models"]:
             tabs = tab["items"]
             break
@@ -22,6 +25,7 @@ def tab_list(context, opts) -> str:
         request=context.request,
         context={
             "tab_list": tabs,
+            "nav_global": context.get("nav_global"),
             "actions_list": context.get("actions_list"),
             "actions_items": context.get("actions_items"),
             "is_popup": context.get("is_popup"),
@@ -37,6 +41,17 @@ def class_name(value: Any) -> str:
 @register.filter
 def index(indexable: Mapping[int, Any], i: int) -> Any:
     return indexable[i]
+
+
+@register.filter
+def tabs(adminform: AdminForm) -> List[Fieldset]:
+    result = []
+
+    for fieldset in adminform:
+        if "tab" in fieldset.classes and fieldset.name:
+            result.append(fieldset)
+
+    return result
 
 
 class CaptureNode(Node):
@@ -107,3 +122,83 @@ def do_capture(parser: Parser, token: Token) -> CaptureNode:
     nodelist = parser.parse(("endcapture",))
     parser.delete_first_token()
     return CaptureNode(nodelist, var, silent)
+
+
+class RenderComponentNode(template.Node):
+    def __init__(
+        self,
+        template_name: str,
+        nodelist: NodeList,
+        extra_context: Optional[Dict] = None,
+        *args,
+        **kwargs,
+    ):
+        self.template_name = template_name
+        self.nodelist = nodelist
+        self.extra_context = extra_context or {}
+        super().__init__(*args, **kwargs)
+
+    def render(self, context: RequestContext) -> str:
+        result = self.nodelist.render(context)
+
+        ctx = {name: var.resolve(context) for name, var in self.extra_context.items()}
+        ctx.update({"children": result})
+
+        return render_to_string(
+            self.template_name,
+            request=context.request,
+            context=ctx,
+        )
+
+
+@register.tag("component")
+def do_component(parser: Parser, token: Token) -> str:
+    bits = token.split_contents()
+
+    if len(bits) < 2:
+        raise TemplateSyntaxError(
+            f"{bits[0]} tag takes at least one argument: the name of the template to be included."
+        )
+
+    options = {}
+    remaining_bits = bits[2:]
+
+    while remaining_bits:
+        option = remaining_bits.pop(0)
+
+        if option in options:
+            raise TemplateSyntaxError(
+                f"The {option} option was specified more than once."
+            )
+
+        if option == "with":
+            value = token_kwargs(remaining_bits, parser, support_legacy=False)
+
+            if not value:
+                raise TemplateSyntaxError(
+                    '"with" in {bits[0]} tag needs at least one keyword argument.'
+                )
+        else:
+            raise TemplateSyntaxError(f"Unknown argument for {bits[0]} tag: {option}.")
+
+        options[option] = value
+
+    nodelist = parser.parse(("endcomponent",))
+    template_name = bits[1][1:-1]
+    extra_context = options.get("with", {})
+    parser.next_token()
+
+    return RenderComponentNode(template_name, nodelist, extra_context)
+
+
+@register.filter
+def add_css_class(field: Field, classes: Union[list, tuple]) -> Field:
+    if type(classes) in (list, tuple):
+        classes = " ".join(classes)
+
+    if "class" in field.field.widget.attrs:
+        field.field.widget.attrs["class"] += f" {classes}"
+    else:
+        field.field.widget.attrs["class"] = classes
+
+    return field

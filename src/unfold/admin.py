@@ -13,6 +13,7 @@ from django.db import models
 from django.db.models import (
     BLANK_CHOICE_DASH,
     ForeignObjectRel,
+    JSONField,
     ManyToManyRel,
     Model,
     OneToOneField,
@@ -58,13 +59,17 @@ from .widgets import (
     UnfoldAdminImageSmallFieldWidget,
     UnfoldAdminIntegerFieldWidget,
     UnfoldAdminIntegerRangeWidget,
+    UnfoldAdminMoneyWidget,
     UnfoldAdminNullBooleanSelectWidget,
+    UnfoldAdminRadioSelectWidget,
     UnfoldAdminSingleDateWidget,
     UnfoldAdminSingleTimeWidget,
     UnfoldAdminSplitDateTimeWidget,
     UnfoldAdminTextareaWidget,
     UnfoldAdminTextInputWidget,
     UnfoldAdminUUIDInputWidget,
+    UnfoldBooleanSwitchWidget,
+    UnfoldBooleanWidget,
 )
 
 try:
@@ -75,7 +80,14 @@ try:
 except ImportError:
     HAS_PSYCOPG = False
 
-checkbox = forms.CheckboxInput({"class": "action-select"}, lambda value: False)
+try:
+    from djmoney.models.fields import MoneyField
+
+    HAS_MONEY = True
+except ImportError:
+    HAS_MONEY = False
+
+checkbox = UnfoldBooleanWidget({"class": "action-select"}, lambda value: False)
 
 FORMFIELD_OVERRIDES = {
     models.DateTimeField: {
@@ -91,12 +103,14 @@ FORMFIELD_OVERRIDES = {
     models.UUIDField: {"widget": UnfoldAdminUUIDInputWidget},
     models.TextField: {"widget": UnfoldAdminTextareaWidget},
     models.NullBooleanField: {"widget": UnfoldAdminNullBooleanSelectWidget},
+    models.BooleanField: {"widget": UnfoldBooleanWidget},
     models.IntegerField: {"widget": UnfoldAdminIntegerFieldWidget},
     models.BigIntegerField: {"widget": UnfoldAdminBigIntegerFieldWidget},
     models.DecimalField: {"widget": UnfoldAdminDecimalFieldWidget},
     models.FloatField: {"widget": UnfoldAdminDecimalFieldWidget},
     models.ImageField: {"widget": UnfoldAdminImageFieldWidget},
     models.JSONField: {"widget": UnfoldAdminTextareaWidget},
+    models.DurationField: {"widget": UnfoldAdminTextInputWidget},
 }
 
 if HAS_PSYCOPG:
@@ -105,6 +119,13 @@ if HAS_PSYCOPG:
             ArrayField: {"widget": UnfoldAdminTextareaWidget},
             SearchVectorField: {"widget": UnfoldAdminTextareaWidget},
             IntegerRangeField: {"widget": UnfoldAdminIntegerRangeWidget},
+        }
+    )
+
+if HAS_MONEY:
+    FORMFIELD_OVERRIDES.update(
+        {
+            MoneyField: {"widget": UnfoldAdminMoneyWidget},
         }
     )
 
@@ -158,9 +179,6 @@ class UnfoldAdminReadonlyField(helpers.AdminReadonlyField):
             "class": " ".join(LABEL_CLASSES + ["mb-2"]),
         }
 
-        if not self.is_first:
-            attrs["class"] = "inline"
-
         label = self.field["label"]
 
         return format_html(
@@ -170,11 +188,23 @@ class UnfoldAdminReadonlyField(helpers.AdminReadonlyField):
             self.form.label_suffix,
         )
 
+    def is_json(self) -> bool:
+        field, obj, model_admin = (
+            self.field["field"],
+            self.form.instance,
+            self.model_admin,
+        )
+
+        try:
+            f, attr, value = lookup_field(field, obj, model_admin)
+        except (AttributeError, ValueError, ObjectDoesNotExist):
+            return False
+
+        return isinstance(f, JSONField)
+
     def contents(self) -> str:
         contents = self._get_contents()
-
-        self._preprocess_field(contents)
-
+        contents = self._preprocess_field(contents)
         return contents
 
     def _get_contents(self) -> str:
@@ -219,9 +249,11 @@ class UnfoldAdminReadonlyField(helpers.AdminReadonlyField):
         return conditional_escape(result_repr)
 
     def _preprocess_field(self, contents: str) -> str:
-        if self.field["field"] in self.model_admin.readonly_preprocess_fields:
+        if (
+            hasattr(self.model_admin, "readonly_preprocess_fields")
+            and self.field["field"] in self.model_admin.readonly_preprocess_fields
+        ):
             func = self.model_admin.readonly_preprocess_fields[self.field["field"]]
-
             if isinstance(func, str):
                 contents = import_string(func)(contents)
             elif callable(func):
@@ -247,9 +279,16 @@ class ModelAdminMixin:
     def formfield_for_choice_field(
         self, db_field: Field, request: HttpRequest, **kwargs
     ) -> TypedChoiceField:
-        # Overrides widget for CharFields which have choices attribute
         if "widget" not in kwargs:
-            kwargs["widget"] = forms.Select(attrs={"class": " ".join(SELECT_CLASSES)})
+            if db_field.name in self.radio_fields:
+                kwargs["widget"] = UnfoldAdminRadioSelectWidget(
+                    radio_style=self.radio_fields[db_field.name]
+                )
+            else:
+                kwargs["widget"] = forms.Select(
+                    attrs={"class": " ".join(SELECT_CLASSES)}
+                )
+
             kwargs["choices"] = db_field.get_choices(
                 include_blank=db_field.blank, blank_choice=[("", _("Select value"))]
             )
@@ -492,6 +531,13 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         if extra_context is None:
             extra_context = {}
 
+        new_formfield_overrides = copy.deepcopy(self.formfield_overrides)
+        new_formfield_overrides.update(
+            {models.BooleanField: {"widget": UnfoldBooleanSwitchWidget}}
+        )
+
+        self.formfield_overrides = new_formfield_overrides
+
         actions = []
         if object_id:
             for action in self.get_actions_detail(request):
@@ -604,7 +650,7 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         default_choices = [("", _("Select action"))]
         return super().get_action_choices(request, default_choices)
 
-    @display(description=mark_safe('<input type="checkbox" id="action-toggle">'))
+    @display(description=mark_safe(checkbox.render("action_toggle_all", 1)))
     def action_checkbox(self, obj: Model):
         return checkbox.render(helpers.ACTION_CHECKBOX_NAME, str(obj.pk))
 

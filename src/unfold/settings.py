@@ -1,5 +1,3 @@
-from functools import lru_cache
-
 from django.conf import settings
 
 CONFIG_DEFAULTS = {
@@ -8,6 +6,9 @@ CONFIG_DEFAULTS = {
     "SITE_URL": "/",
     "SITE_ICON": None,
     "SITE_SYMBOL": None,
+    "SITE_LOGO": None,
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": True,
     "COLORS": {
         "primary": {
             "50": "250 245 255",
@@ -20,9 +21,11 @@ CONFIG_DEFAULTS = {
             "700": "126 34 206",
             "800": "107 33 168",
             "900": "88 28 135",
+            "950": "59 7 100",
         },
     },
     "DASHBOARD_CALLBACK": None,
+    "ENVIRONMENT": None,
     "STYLES": [],
     "SCRIPTS": [],
     "SIDEBAR": {
@@ -39,7 +42,6 @@ CONFIG_DEFAULTS = {
 }
 
 
-@lru_cache()
 def get_config(settings_name=None):
     if settings_name is None:
         settings_name = "UNFOLD"

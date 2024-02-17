@@ -14,6 +14,7 @@ from django.db.models.fields import (
     FloatField,
     IntegerField,
 )
+from django.forms import ValidationError
 from django.http import HttpRequest
 from django.utils.dateparse import parse_datetime
 
@@ -56,13 +57,19 @@ class SingleNumericFilter(admin.FieldListFilter):
 
         if self.parameter_name in params:
             value = params.pop(self.parameter_name)
-            self.used_parameters[self.parameter_name] = value
+            value = value[0] if isinstance(value, list) else value
+
+            if value not in EMPTY_VALUES:
+                self.used_parameters[self.parameter_name] = value
 
     def queryset(
         self, request: HttpRequest, queryset: QuerySet[Any]
     ) -> Optional[QuerySet]:
         if self.value():
-            return queryset.filter(**{self.parameter_name: self.value()})
+            try:
+                return queryset.filter(**{self.parameter_name: self.value()})
+            except (ValueError, ValidationError):
+                return None
 
     def value(self) -> Any:
         return self.used_parameters.get(self.parameter_name, None)
@@ -90,11 +97,16 @@ class RangeNumericMixin:
     def init_used_parameters(self, params: Dict[str, Any]) -> None:
         if self.parameter_name + "_from" in params:
             value = params.pop(self.parameter_name + "_from")
-            self.used_parameters[self.parameter_name + "_from"] = value
+
+            self.used_parameters[self.parameter_name + "_from"] = (
+                value[0] if isinstance(value, list) else value
+            )
 
         if self.parameter_name + "_to" in params:
             value = params.pop(self.parameter_name + "_to")
-            self.used_parameters[self.parameter_name + "_to"] = value
+            self.used_parameters[self.parameter_name + "_to"] = (
+                value[0] if isinstance(value, list) else value
+            )
 
     def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
         filters = {}
@@ -103,8 +115,7 @@ class RangeNumericMixin:
         if value_from is not None and value_from != "":
             filters.update(
                 {
-                    self.parameter_name
-                    + "__gte": self.used_parameters.get(
+                    self.parameter_name + "__gte": self.used_parameters.get(
                         self.parameter_name + "_from", None
                     ),
                 }
@@ -114,14 +125,16 @@ class RangeNumericMixin:
         if value_to is not None and value_to != "":
             filters.update(
                 {
-                    self.parameter_name
-                    + "__lte": self.used_parameters.get(
+                    self.parameter_name + "__lte": self.used_parameters.get(
                         self.parameter_name + "_to", None
                     ),
                 }
             )
 
-        return queryset.filter(**filters)
+        try:
+            return queryset.filter(**filters)
+        except (ValueError, ValidationError):
+            return None
 
     def expected_parameters(self) -> List[str]:
         return [
@@ -137,12 +150,10 @@ class RangeNumericMixin:
                 "form": RangeNumericForm(
                     name=self.parameter_name,
                     data={
-                        self.parameter_name
-                        + "_from": self.used_parameters.get(
+                        self.parameter_name + "_from": self.used_parameters.get(
                             self.parameter_name + "_from", None
                         ),
-                        self.parameter_name
-                        + "_to": self.used_parameters.get(
+                        self.parameter_name + "_to": self.used_parameters.get(
                             self.parameter_name + "_to", None
                         ),
                     },
@@ -254,12 +265,10 @@ class SliderNumericFilter(RangeNumericFilter):
                 "form": self.form_class(
                     name=self.parameter_name,
                     data={
-                        self.parameter_name
-                        + "_from": self.used_parameters.get(
+                        self.parameter_name + "_from": self.used_parameters.get(
                             self.parameter_name + "_from", min_value
                         ),
-                        self.parameter_name
-                        + "_to": self.used_parameters.get(
+                        self.parameter_name + "_to": self.used_parameters.get(
                             self.parameter_name + "_to", max_value
                         ),
                     },
@@ -301,11 +310,17 @@ class RangeDateFilter(admin.FieldListFilter):
 
         if self.parameter_name + "_from" in params:
             value = params.pop(self.field_path + "_from")
-            self.used_parameters[self.field_path + "_from"] = value
+            value = value[0] if isinstance(value, list) else value
+
+            if value not in EMPTY_VALUES:
+                self.used_parameters[self.field_path + "_from"] = value
 
         if self.parameter_name + "_to" in params:
             value = params.pop(self.field_path + "_to")
-            self.used_parameters[self.field_path + "_to"] = value
+            value = value[0] if isinstance(value, list) else value
+
+            if value not in EMPTY_VALUES:
+                self.used_parameters[self.field_path + "_to"] = value
 
     def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
         filters = {}
@@ -314,8 +329,7 @@ class RangeDateFilter(admin.FieldListFilter):
         if value_from not in EMPTY_VALUES:
             filters.update(
                 {
-                    self.parameter_name
-                    + "__gte": self.used_parameters.get(
+                    self.parameter_name + "__gte": self.used_parameters.get(
                         self.parameter_name + "_from", None
                     ),
                 }
@@ -325,14 +339,16 @@ class RangeDateFilter(admin.FieldListFilter):
         if value_to not in EMPTY_VALUES:
             filters.update(
                 {
-                    self.parameter_name
-                    + "__lte": self.used_parameters.get(
+                    self.parameter_name + "__lte": self.used_parameters.get(
                         self.parameter_name + "_to", None
                     ),
                 }
             )
 
-        return queryset.filter(**filters)
+        try:
+            return queryset.filter(**filters)
+        except (ValueError, ValidationError):
+            return None
 
     def expected_parameters(self) -> List[str]:
         return [
@@ -348,12 +364,10 @@ class RangeDateFilter(admin.FieldListFilter):
                 "form": self.form_class(
                     name=self.parameter_name,
                     data={
-                        self.parameter_name
-                        + "_from": self.used_parameters.get(
+                        self.parameter_name + "_from": self.used_parameters.get(
                             self.parameter_name + "_from", None
                         ),
-                        self.parameter_name
-                        + "_to": self.used_parameters.get(
+                        self.parameter_name + "_to": self.used_parameters.get(
                             self.parameter_name + "_to", None
                         ),
                     },
@@ -443,7 +457,10 @@ class RangeDateTimeFilter(admin.FieldListFilter):
                 }
             )
 
-        return queryset.filter(**filters)
+        try:
+            return queryset.filter(**filters)
+        except (ValueError, ValidationError):
+            return None
 
     def choices(self, changelist: ChangeList) -> Tuple[Dict[str, Any], ...]:
         return (
@@ -453,20 +470,16 @@ class RangeDateTimeFilter(admin.FieldListFilter):
                 "form": self.form_class(
                     name=self.parameter_name,
                     data={
-                        self.parameter_name
-                        + "_from_0": self.used_parameters.get(
+                        self.parameter_name + "_from_0": self.used_parameters.get(
                             self.parameter_name + "_from_0", None
                         ),
-                        self.parameter_name
-                        + "_from_1": self.used_parameters.get(
+                        self.parameter_name + "_from_1": self.used_parameters.get(
                             self.parameter_name + "_from_1", None
                         ),
-                        self.parameter_name
-                        + "_to_0": self.used_parameters.get(
+                        self.parameter_name + "_to_0": self.used_parameters.get(
                             self.parameter_name + "_to_0", None
                         ),
-                        self.parameter_name
-                        + "_to_1": self.used_parameters.get(
+                        self.parameter_name + "_to_1": self.used_parameters.get(
                             self.parameter_name + "_to_1", None
                         ),
                     },

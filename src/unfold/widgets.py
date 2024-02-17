@@ -1,19 +1,29 @@
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
+from django.contrib.admin.options import VERTICAL
 from django.contrib.admin.widgets import (
     AdminBigIntegerFieldWidget,
     AdminDateWidget,
     AdminEmailInputWidget,
     AdminFileWidget,
     AdminIntegerFieldWidget,
+    AdminRadioSelect,
     AdminSplitDateTime,
     AdminTextareaWidget,
     AdminTextInputWidget,
     AdminTimeWidget,
     AdminUUIDInputWidget,
 )
-from django.forms import MultiWidget, NullBooleanSelect, NumberInput
+from django.forms import (
+    CheckboxInput,
+    MultiWidget,
+    NullBooleanSelect,
+    NumberInput,
+    Select,
+)
 from django.utils.translation import gettext_lazy as _
+
+from .exceptions import UnfoldException
 
 LABEL_CLASSES = [
     "block",
@@ -31,17 +41,14 @@ CHECKBOX_LABEL_CLASSES = [
     "dark:text-gray-200",
 ]
 
-BASE_INPUT_CLASSES = [
+BASE_CLASSES = [
     "border",
     "bg-white",
     "font-medium",
-    "px-3",
-    "py-2",
     "rounded-md",
     "shadow-sm",
     "text-gray-500",
     "text-sm",
-    "w-full",
     "focus:ring",
     "focus:ring-primary-300",
     "focus:border-primary-600",
@@ -58,7 +65,16 @@ BASE_INPUT_CLASSES = [
     "dark:group-[.errors]:focus:ring-red-600/40",
 ]
 
+BASE_INPUT_CLASSES = [
+    *BASE_CLASSES,
+    "px-3",
+    "py-2",
+    "w-full",
+]
+
 INPUT_CLASSES = [*BASE_INPUT_CLASSES, "max-w-2xl"]
+
+COLOR_CLASSES = [*BASE_CLASSES, "h-9.5", "px-2", "py-2", "w-32"]
 
 INPUT_CLASSES_READONLY = [*BASE_INPUT_CLASSES, "bg-gray-50"]
 
@@ -84,7 +100,13 @@ TEXTAREA_EXPANDABLE_CLASSES = [
     "h-full",
 ]
 
-SELECT_CLASSES = [*BASE_INPUT_CLASSES, "pr-8", "max-w-2xl", "appearance-none"]
+SELECT_CLASSES = [
+    *BASE_INPUT_CLASSES,
+    "pr-8",
+    "max-w-2xl",
+    "appearance-none",
+    "truncate",
+]
 
 PROSE_CLASSES = [
     "font-normal",
@@ -108,10 +130,126 @@ PROSE_CLASSES = [
     "dark:prose-strong:text-gray-200",
 ]
 
+CHECKBOX_CLASSES = [
+    "appearance-none",
+    "bg-white",
+    "block",
+    "border",
+    "border-gray-300",
+    "cursor-pointer",
+    "h-4",
+    "relative",
+    "rounded",
+    "shadow-sm",
+    "w-4",
+    "hover:border-gray-400",
+    "dark:bg-gray-700",
+    "dark:border-gray-500",
+    "dark:after:checked:text-white",
+    "focus:outline",
+    "focus:outline-1",
+    "focus:outline-offset-2",
+    "focus:outline-primary-500",
+    "after:absolute",
+    "after:content-['done']",
+    "after:!flex",
+    "after:h-4",
+    "after:items-center",
+    "after:justify-center",
+    "after:leading-none",
+    "after:material-symbols-outlined",
+    "after:-ml-px",
+    "after:-mt-px",
+    "after:!text-sm",
+    "after:text-white",
+    "after:transition-all",
+    "after:w-4",
+    "after:dark:text-gray-700",
+    "checked:bg-primary-600",
+    "checked:border-primary-600",
+    "checked:transition-all",
+    "checked:hover:border-primary-600",
+]
+
+RADIO_CLASSES = [
+    "appearance-none",
+    "bg-white",
+    "block",
+    "border",
+    "border-gray-300",
+    "cursor-pointer",
+    "h-4",
+    "relative",
+    "rounded-full",
+    "w-4",
+    "dark:bg-gray-700",
+    "dark:border-gray-500",
+    "hover:border-gray-400",
+    "focus:outline",
+    "focus:outline-1",
+    "focus:outline-offset-2",
+    "focus:outline-primary-500",
+    "after:absolute",
+    "after:bg-white",
+    "after:content-['']",
+    "after:flex",
+    "after:h-2",
+    "after:items-center",
+    "after:justify-center",
+    "after:leading-none",
+    "after:left-1/2",
+    "after:rounded-full",
+    "after:text-white",
+    "after:top-1/2",
+    "after:transition-all",
+    "after:-translate-x-1/2",
+    "after:-translate-y-1/2",
+    "after:text-sm",
+    "after:w-2",
+    "after:dark:text-gray-700",
+    "after:dark:bg-transparent",
+    "checked:bg-primary-600",
+    "checked:border-primary-600",
+    "checked:transition-all",
+    "checked:after:bg-white",
+    "checked:after:dark:bg-gray-200",
+]
+
+SWITCH_CLASSES = [
+    "appearance-none",
+    "bg-gray-300",
+    "cursor-pointer",
+    "h-5",
+    "relative",
+    "rounded-full",
+    "transition-all",
+    "w-8",
+    "after:absolute",
+    "after:bg-white",
+    "after:content-['']",
+    "after:bg-red-300",
+    "after:h-3",
+    "after:rounded-full",
+    "after:shadow-sm",
+    "after:left-1",
+    "after:top-1",
+    "after:w-3",
+    "checked:bg-primary-600",
+    "checked:after:left-4",
+    "dark:bg-gray-600",
+]
+
 
 class UnfoldAdminTextInputWidget(AdminTextInputWidget):
     def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
         super().__init__(attrs={"class": " ".join(INPUT_CLASSES), **(attrs or {})})
+
+
+class UnfoldAdminColorInputWidget(AdminTextInputWidget):
+    def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(
+            attrs={"type": "color", "class": " ".join(COLOR_CLASSES), **(attrs or {})}
+        )
 
 
 class UnfoldAdminUUIDInputWidget(AdminUUIDInputWidget):
@@ -143,15 +281,24 @@ class UnfoldAdminEmailInputWidget(AdminEmailInputWidget):
         super().__init__(attrs={"class": " ".join(INPUT_CLASSES), **(attrs or {})})
 
 
-class UnfoldAdminImageFieldWidget(AdminFileWidget):
+class FileFieldMixin:
+    def get_context(self, name, value, attrs):
+        widget = super().get_context(name, value, attrs)
+        widget["widget"].update(
+            {"class": " ".join([*CHECKBOX_CLASSES, *["form-check-input"]])}
+        )
+        return widget
+
+
+class UnfoldAdminImageFieldWidget(FileFieldMixin, AdminFileWidget):
     pass
 
 
-class UnfoldAdminFileFieldWidget(AdminFileWidget):
+class UnfoldAdminFileFieldWidget(FileFieldMixin, AdminFileWidget):
     template_name = "unfold/widgets/clearable_file_input_small.html"
 
 
-class UnfoldAdminImageSmallFieldWidget(AdminFileWidget):
+class UnfoldAdminImageSmallFieldWidget(FileFieldMixin, AdminFileWidget):
     template_name = "unfold/widgets/clearable_file_input_small.html"
 
 
@@ -287,3 +434,75 @@ class UnfoldAdminBigIntegerFieldWidget(AdminBigIntegerFieldWidget):
 
 class UnfoldAdminNullBooleanSelectWidget(NullBooleanSelect):
     pass
+
+
+class UnfoldAdminSelect(Select):
+    def __init__(self, attrs=None, choices=()):
+        if attrs is None:
+            attrs = {}
+
+        attrs["class"] = " ".join(SELECT_CLASSES)
+        super().__init__(attrs, choices)
+
+
+class UnfoldAdminRadioSelectWidget(AdminRadioSelect):
+    option_template_name = "admin/widgets/radio_option.html"
+
+    def __init__(self, radio_style: Optional[int] = None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if radio_style is None:
+            radio_style = VERTICAL
+
+        self.radio_style = radio_style
+        self.attrs = {"class": " ".join(RADIO_CLASSES)}
+
+    def get_context(self, *args, **kwargs) -> Dict[str, Any]:
+        context = super().get_context(*args, **kwargs)
+        context.update({"radio_style": self.radio_style})
+        return context
+
+
+try:
+    from djmoney.forms.widgets import MoneyWidget
+    from djmoney.settings import CURRENCY_CHOICES
+
+    class UnfoldAdminMoneyWidget(MoneyWidget):
+        template_name = "unfold/widgets/split_money.html"
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(
+                amount_widget=UnfoldAdminTextInputWidget,
+                currency_widget=UnfoldAdminSelect(choices=CURRENCY_CHOICES),
+            )
+
+except ImportError:
+
+    class UnfoldAdminMoneyWidget:
+        def __init__(self, *args, **kwargs):
+            raise UnfoldException("django-money not installed")
+
+
+class UnfoldBooleanWidget(CheckboxInput):
+    def __init__(
+        self, attrs: Optional[Dict[str, Any]] = None, check_test: Callable = None
+    ) -> None:
+        if attrs is None:
+            attrs = {}
+
+        return super().__init__(
+            {
+                **(attrs or {}),
+                "class": " ".join(CHECKBOX_CLASSES + [attrs.get("class", "")]),
+            },
+            check_test,
+        )
+
+
+class UnfoldBooleanSwitchWidget(CheckboxInput):
+    def __init__(
+        self, attrs: Optional[Dict[str, Any]] = None, check_test: Callable = None
+    ) -> None:
+        return super().__init__(
+            attrs={"class": " ".join(SWITCH_CLASSES), **(attrs or {})}, check_test=None
+        )

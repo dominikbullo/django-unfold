@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "django-unfold"
-version = "0.7.0"
-description = "Clean & minimal Django admin theme based on Tailwind CSS"
+version = "0.20.3"
+description = "Modern Django admin theme for seamless interface development"
 license = "MIT"
 readme = "README.md"
 authors = []
@@ -18,24 +18,30 @@ keywords = [
 ]
 classifiers = [
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Framework :: Django",
 ]
 
+[tool.poetry.dependencies]
+python = ">=3.8"
+django = ">=3.2"
+
 [tool.poetry.group.test.dependencies]
 pytest = "^7.3.1"
 pytest-django = "^4.5.2"
 tox = "^4.5.2"
 
-[tool.black]
-target-version = ["py37", "py38", "py39", "py310", "py311"]
+
+
+[tool.poetry.group.dev.dependencies]
+python-semantic-release = "^8.7.0"
 
 [tool.ruff]
 fix = true
@@ -47,12 +53,33 @@ select = [
     "I",  # isort
     "C",  # flake8-comprehensions
     "B",  # flake8-bugbear
+    "UP", # pyupgrade
 ]
 ignore = [
     "E501",  # line too long, handled by black
     "B905",  # zip() without strict=True
     "C901",  # too complex
 ]
+
+[tool.semantic_release]
+tag_format = "{version}"
+major_on_zero = true
+version_toml = [
+    "pyproject.toml:tool.poetry.version"
+]
+
+[tool.semantic_release.changelog]
+template_dir = ".github/templates"
+exclude_commit_patterns = [
+    "chore: version bump"
+]
+
+[tool.semantic_release.changelog.environment]
+trim_blocks = true
+lstrip_blocks = true
+
+[tool.semantic_release.publish]
+upload_to_vcs_release = false
 
 [tool.pytest.ini_options]
 addopts = """\
@@ -61,11 +88,6 @@ addopts = """\
     --ds=tests.settings
     """
 django_find_project = false
-
-[tool.poetry.dependencies]
-python = ">=3.7"
-django = ">=3.2"
-importlib-metadata = "6.7.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

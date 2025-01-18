@@ -36,7 +36,57 @@ from ..widgets import UnfoldBooleanWidget
 
 register = Library()
 
-LINK_CLASSES = ["text-gray-700 dark:text-gray-200"]
+LINK_CLASSES = []
+
+ROW_CLASSES = [
+    "align-middle",
+    "flex",
+    "border-t",
+    "border-base-200",
+    "font-normal",
+    "gap-4",
+    "min-w-0",
+    "overflow-hidden",
+    "px-3",
+    "py-2",
+    "text-left",
+    "before:flex",
+    "before:capitalize",
+    "before:content-[attr(data-label)]",
+    "before:items-center",
+    "before:font-semibold",
+    "before:text-font-important-light",
+    "before:mr-auto",
+    "first:border-t-0",
+    "lg:before:hidden",
+    "lg:first:border-t",
+    "lg:py-3",
+    "lg:table-cell",
+    "dark:border-base-800",
+    "dark:before:text-font-important-dark",
+]
+
+CHECKBOX_CLASSES = [
+    "action-checkbox",
+    "align-middle",
+    "flex",
+    "items-center",
+    "px-3",
+    "py-2",
+    "text-left",
+    "before:block",
+    "before:capitalize",
+    "before:content-[attr(data-label)]",
+    "before:font-semibold",
+    "before:mr-auto",
+    "before:text-font-important-light",
+    "lg:before:hidden",
+    "lg:border-t",
+    "lg:border-base-200",
+    "lg:table-cell",
+    "dark:lg:border-base-800",
+    "dark:before:text-font-important-dark",
+]
 
 
 def result_headers(cl):
@@ -95,7 +145,7 @@ def result_headers(cl):
         if is_sorted:
             order_type = ordering_field_columns.get(i).lower()
             sort_priority = list(ordering_field_columns).index(i) + 1
-            th_classes.append("sorted %sending" % order_type)
+            th_classes.append(f"sorted {order_type}ending")
             new_order_type = {"asc": "desc", "desc": "asc"}[order_type]
 
         # build new ordering param
@@ -132,7 +182,7 @@ def result_headers(cl):
             "url_primary": cl.get_query_string({ORDER_VAR: ".".join(o_list_primary)}),
             "url_remove": cl.get_query_string({ORDER_VAR: ".".join(o_list_remove)}),
             "url_toggle": cl.get_query_string({ORDER_VAR: ".".join(o_list_toggle)}),
-            "class_attrib": format_html(' class="{}"', " ".join(th_classes))
+            "class_attrib": format_html("{}", " ".join(th_classes))
             if th_classes
             else "",
         }
@@ -157,29 +207,8 @@ def items_for_result(cl: ChangeList, result: HttpRequest, form) -> SafeText:
     for field_index, field_name in enumerate(cl.list_display):
         empty_value_display = cl.model_admin.get_empty_value_display()
         row_classes = [
-            "field-%s" % _coerce_field_name(field_name, field_index),
-            "align-middle",
-            "flex",
-            "border-t",
-            "border-gray-200",
-            "font-normal",
-            "px-3",
-            "py-2",
-            "text-left",
-            "text-sm",
-            "before:flex",
-            "before:capitalize",
-            "before:content-[attr(data-label)]",
-            "before:items-center",
-            "before:mr-auto",
-            "before:text-gray-500",
-            "first:border-t-0",
-            "dark:before:text-gray-400",
-            "lg:before:hidden",
-            "lg:first:border-t",
-            "lg:py-3",
-            "lg:table-cell",
-            "dark:border-gray-800",
+            f"field-{_coerce_field_name(field_name, field_index)}",
+            *ROW_CLASSES,
         ]
 
         try:
@@ -192,27 +221,7 @@ def items_for_result(cl: ChangeList, result: HttpRequest, form) -> SafeText:
             )
             if f is None or f.auto_created:
                 if field_name == "action_checkbox":
-                    row_classes = [
-                        "action-checkbox",
-                        "align-middle",
-                        "flex",
-                        "items-center",
-                        "px-3",
-                        "py-2",
-                        "text-left",
-                        "text-sm",
-                        "before:block",
-                        "before:capitalize",
-                        "before:content-[attr(data-label)]",
-                        "before:mr-auto",
-                        "before:text-gray-500",
-                        "lg:before:hidden",
-                        "lg:border-t",
-                        "lg:border-gray-200",
-                        "lg:table-cell",
-                        "dark:before:text-gray-400",
-                        "dark:lg:border-gray-800",
-                    ]
+                    row_classes = CHECKBOX_CLASSES
                 boolean = getattr(attr, "boolean", False)
                 label = getattr(attr, "label", False)
                 header = getattr(attr, "header", False)
@@ -239,7 +248,7 @@ def items_for_result(cl: ChangeList, result: HttpRequest, form) -> SafeText:
                     f, (models.DateField, models.TimeField, models.ForeignKey)
                 ):
                     row_classes.append("nowrap")
-        row_class = mark_safe(' class="%s"' % " ".join(row_classes))
+
         # If list_display_links not defined, add the link tag to the first field
 
         if link_in_col(first, field_name, cl):
@@ -272,7 +281,7 @@ def items_for_result(cl: ChangeList, result: HttpRequest, form) -> SafeText:
                     else "",
                     result_repr,
                 )
-
+            row_class = mark_safe(f' class="{" ".join(row_classes)}"')
             yield format_html(
                 '<{}{} data-label="{}">{}</{}>',
                 table_tag,
@@ -294,7 +303,17 @@ def items_for_result(cl: ChangeList, result: HttpRequest, form) -> SafeText:
                 )
             ):
                 bf = form[field_name]
-                result_repr = mark_safe(str(bf.errors) + str(bf))
+                result_repr = mark_safe(
+                    str(bf)
+                    + render_to_string(
+                        "unfold/helpers/form_errors.html", {"errors": bf.errors}
+                    )
+                )
+
+                if bf.errors:
+                    row_classes += ["group", "errors"]
+
+            row_class = mark_safe(f' class="{" ".join(row_classes)}"')
 
             if field_index != 0:
                 yield format_html(
@@ -354,6 +373,7 @@ def result_list(context: Dict[str, Any], cl: ChangeList) -> Dict[str, Any]:
         "num_sorted_fields": num_sorted_fields,
         "results": list(results(cl)),
         "actions_row": context.get("actions_row"),
+        "has_add_permission": cl.model_admin.has_add_permission(context["request"]),
     }
 
 

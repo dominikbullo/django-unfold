@@ -16,15 +16,165 @@ from django.db.models.fields import (
 )
 from django.forms import ValidationError
 from django.http import HttpRequest
-from django.utils.dateparse import parse_datetime
+from django.utils.translation import gettext_lazy as _
+
+from unfold.utils import parse_date_str, parse_datetime_str
 
 from .forms import (
+    DropdownForm,
     RangeDateForm,
     RangeDateTimeForm,
     RangeNumericForm,
+    SearchForm,
     SingleNumericForm,
     SliderNumericForm,
 )
+
+
+class ValueMixin:
+    def value(self) -> Optional[str]:
+        return (
+            self.lookup_val[0]
+            if self.lookup_val not in EMPTY_VALUES
+            and isinstance(self.lookup_val, List)
+            and len(self.lookup_val) > 0
+            else self.lookup_val
+        )
+
+
+class MultiValueMixin:
+    def value(self) -> Optional[List[str]]:
+        return (
+            self.lookup_val
+            if self.lookup_val not in EMPTY_VALUES
+            and isinstance(self.lookup_val, List)
+            and len(self.lookup_val) > 0
+            else self.lookup_val
+        )
+
+
+class DropdownMixin:
+    template = "unfold/filters/filters_field.html"
+    form_class = DropdownForm
+    all_option = ["", _("All")]
+
+    def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
+        if self.value() not in EMPTY_VALUES:
+            return super().queryset(request, queryset)
+
+        return queryset
+
+
+class TextFilter(admin.SimpleListFilter):
+    template = "unfold/filters/filters_field.html"
+    form_class = SearchForm
+
+    def has_output(self) -> bool:
+        return True
+
+    def lookups(self, request: HttpRequest, model_admin: ModelAdmin) -> Tuple:
+        return ()
+
+    def choices(self, changelist: ChangeList) -> Tuple[Dict[str, Any], ...]:
+        return (
+            {
+                "form": self.form_class(
+                    name=self.parameter_name,
+                    label=_("By %(filter_title)s") % {"filter_title": self.title},
+                    data={self.parameter_name: self.value()},
+                ),
+            },
+        )
+
+
+class FieldTextFilter(ValueMixin, admin.FieldListFilter):
+    template = "unfold/filters/filters_field.html"
+    form_class = SearchForm
+
+    def __init__(self, field, request, params, model, model_admin, field_path):
+        self.lookup_kwarg = f"{field_path}__icontains"
+        self.lookup_val = params.get(self.lookup_kwarg)
+        super().__init__(field, request, params, model, model_admin, field_path)
+
+    def expected_parameters(self) -> List[str]:
+        return [self.lookup_kwarg]
+
+    def choices(self, changelist: ChangeList) -> Tuple[Dict[str, Any], ...]:
+        return (
+            {
+                "form": self.form_class(
+                    label=_("By %(filter_title)s") % {"filter_title": self.title},
+                    name=self.lookup_kwarg,
+                    data={self.lookup_kwarg: self.value()},
+                ),
+            },
+        )
+
+
+class DropdownFilter(admin.SimpleListFilter):
+    template = "unfold/filters/filters_field.html"
+    form_class = DropdownForm
+    all_option = ["", _("All")]
+
+    def choices(self, changelist: ChangeList) -> Tuple[Dict[str, Any], ...]:
+        return (
+            {
+                "form": self.form_class(
+                    label=_("By %(filter_title)s") % {"filter_title": self.title},
+                    name=self.parameter_name,
+                    choices=[self.all_option, *self.lookup_choices],
+                    data={self.parameter_name: self.value()},
+                    multiple=self.multiple if hasattr(self, "multiple") else False,
+                ),
+            },
+        )
+
+
+class MultipleDropdownFilter(DropdownFilter):
+    multiple = True
+
+    def __init__(self, request, params, model, model_admin):
+        self.request = request
+        super().__init__(request, params, model, model_admin)
+
+    def value(self):
+        return self.request.GET.getlist(self.parameter_name)
+
+
+class ChoicesDropdownFilter(ValueMixin, DropdownMixin, admin.ChoicesFieldListFilter):
+    def choices(self, changelist: ChangeList):
+        choices = [self.all_option, *self.field.flatchoices]
+
+        yield {
+            "form": self.form_class(
+                label=_("By %(filter_title)s") % {"filter_title": self.title},
+                name=self.lookup_kwarg,
+                choices=choices,
+                data={self.lookup_kwarg: self.value()},
+                multiple=self.multiple if hasattr(self, "multiple") else False,
+            ),
+        }
+
+
+class MultipleChoicesDropdownFilter(MultiValueMixin, ChoicesDropdownFilter):
+    multiple = True
+
+
+class RelatedDropdownFilter(ValueMixin, DropdownMixin, admin.RelatedFieldListFilter):
+    def choices(self, changelist: ChangeList):
+        yield {
+            "form": self.form_class(
+                label=_("By %(filter_title)s") % {"filter_title": self.title},
+                name=self.lookup_kwarg,
+                choices=[self.all_option, *self.lookup_choices],
+                data={self.lookup_kwarg: self.value()},
+                multiple=self.multiple if hasattr(self, "multiple") else False,
+            ),
+        }
+
+
+class MultipleRelatedDropdownFilter(MultiValueMixin, RelatedDropdownFilter):
+    multiple = True
 
 
 class SingleNumericFilter(admin.FieldListFilter):
@@ -45,9 +195,7 @@ class SingleNumericFilter(admin.FieldListFilter):
 
         if not isinstance(field, (DecimalField, IntegerField, FloatField, AutoField)):
             raise TypeError(
-                "Class {} is not supported for {}.".format(
-                    type(self.field), self.__class__.__name__
-                )
+                f"Class {type(self.field)} is not supported for {self.__class__.__name__}."
             )
 
         self.request = request
@@ -196,9 +344,7 @@ class RangeNumericFilter(RangeNumericMixin, admin.FieldListFilter):
         super().__init__(field, request, params, model, model_admin, field_path)
         if not isinstance(field, (DecimalField, IntegerField, FloatField, AutoField)):
             raise TypeError(
-                "Class {} is not supported for {}.".format(
-                    type(self.field), self.__class__.__name__
-                )
+                f"Class {type(self.field)} is not supported for {self.__class__.__name__}."
             )
 
         self.request = request
@@ -299,9 +445,7 @@ class RangeDateFilter(admin.FieldListFilter):
         super().__init__(field, request, params, model, model_admin, field_path)
         if not isinstance(field, DateField):
             raise TypeError(
-                "Class {} is not supported for {}.".format(
-                    type(self.field), self.__class__.__name__
-                )
+                f"Class {type(self.field)} is not supported for {self.__class__.__name__}."
             )
 
         self.request = request
@@ -325,25 +469,13 @@ class RangeDateFilter(admin.FieldListFilter):
     def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
         filters = {}
 
-        value_from = self.used_parameters.get(self.parameter_name + "_from", None)
+        value_from = self.used_parameters.get(self.parameter_name + "_from")
         if value_from not in EMPTY_VALUES:
-            filters.update(
-                {
-                    self.parameter_name + "__gte": self.used_parameters.get(
-                        self.parameter_name + "_from", None
-                    ),
-                }
-            )
+            filters.update({self.parameter_name + "__gte": parse_date_str(value_from)})
 
-        value_to = self.used_parameters.get(self.parameter_name + "_to", None)
+        value_to = self.used_parameters.get(self.parameter_name + "_to")
         if value_to not in EMPTY_VALUES:
-            filters.update(
-                {
-                    self.parameter_name + "__lte": self.used_parameters.get(
-                        self.parameter_name + "_to", None
-                    ),
-                }
-            )
+            filters.update({self.parameter_name + "__lte": parse_date_str(value_to)})
 
         try:
             return queryset.filter(**filters)
@@ -394,9 +526,7 @@ class RangeDateTimeFilter(admin.FieldListFilter):
         super().__init__(field, request, params, model, model_admin, field_path)
         if not isinstance(field, DateTimeField):
             raise TypeError(
-                "Class {} is not supported for {}.".format(
-                    type(self.field), self.__class__.__name__
-                )
+                f"Class {type(self.field)} is not supported for {self.__class__.__name__}."
             )
 
         self.request = request
@@ -405,18 +535,22 @@ class RangeDateTimeFilter(admin.FieldListFilter):
 
         if self.parameter_name + "_from_0" in params:
             value = params.pop(self.field_path + "_from_0")
+            value = value[0] if isinstance(value, list) else value
             self.used_parameters[self.field_path + "_from_0"] = value
 
         if self.parameter_name + "_from_1" in params:
             value = params.pop(self.field_path + "_from_1")
+            value = value[0] if isinstance(value, list) else value
             self.used_parameters[self.field_path + "_from_1"] = value
 
         if self.parameter_name + "_to_0" in params:
             value = params.pop(self.field_path + "_to_0")
+            value = value[0] if isinstance(value, list) else value
             self.used_parameters[self.field_path + "_to_0"] = value
 
         if self.parameter_name + "_to_1" in params:
             value = params.pop(self.field_path + "_to_1")
+            value = value[0] if isinstance(value, list) else value
             self.used_parameters[self.field_path + "_to_1"] = value
 
     def expected_parameters(self) -> List[str]:
@@ -430,20 +564,17 @@ class RangeDateTimeFilter(admin.FieldListFilter):
     def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
         filters = {}
 
-        date_value_from = self.used_parameters.get(
-            self.parameter_name + "_from_0", None
-        )
-        time_value_from = self.used_parameters.get(
-            self.parameter_name + "_from_1", None
-        )
-        date_value_to = self.used_parameters.get(self.parameter_name + "_to_0", None)
-        time_value_to = self.used_parameters.get(self.parameter_name + "_to_1", None)
+        date_value_from = self.used_parameters.get(self.parameter_name + "_from_0")
+        time_value_from = self.used_parameters.get(self.parameter_name + "_from_1")
+
+        date_value_to = self.used_parameters.get(self.parameter_name + "_to_0")
+        time_value_to = self.used_parameters.get(self.parameter_name + "_to_1")
 
         if date_value_from not in EMPTY_VALUES and time_value_from not in EMPTY_VALUES:
             filters.update(
                 {
-                    f"{self.parameter_name}__gte": parse_datetime(
-                        f"{date_value_from}T{time_value_from}"
+                    f"{self.parameter_name}__gte": parse_datetime_str(
+                        f"{date_value_from} {time_value_from}"
                     ),
                 }
             )
@@ -451,8 +582,8 @@ class RangeDateTimeFilter(admin.FieldListFilter):
         if date_value_to not in EMPTY_VALUES and time_value_to not in EMPTY_VALUES:
             filters.update(
                 {
-                    f"{self.parameter_name}__lte": parse_datetime(
-                        f"{date_value_to}T{time_value_to}"
+                    f"{self.parameter_name}__lte": parse_datetime_str(
+                        f"{date_value_to} {time_value_to}"
                     ),
                 }
             )
@@ -471,16 +602,16 @@ class RangeDateTimeFilter(admin.FieldListFilter):
                     name=self.parameter_name,
                     data={
                         self.parameter_name + "_from_0": self.used_parameters.get(
-                            self.parameter_name + "_from_0", None
+                            self.parameter_name + "_from_0"
                         ),
                         self.parameter_name + "_from_1": self.used_parameters.get(
-                            self.parameter_name + "_from_1", None
+                            self.parameter_name + "_from_1"
                         ),
                         self.parameter_name + "_to_0": self.used_parameters.get(
-                            self.parameter_name + "_to_0", None
+                            self.parameter_name + "_to_0"
                         ),
                         self.parameter_name + "_to_1": self.used_parameters.get(
-                            self.parameter_name + "_to_1", None
+                            self.parameter_name + "_to_1"
                         ),
                     },
                 ),

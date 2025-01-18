@@ -30,15 +30,11 @@ class UnfoldModelAdminChecks(ModelAdminChecks):
             if not hasattr(action.method, "allowed_permissions"):
                 continue
             for permission in action.method.allowed_permissions:
-                method_name = "has_%s_permission" % permission
+                method_name = f"has_{permission}_permission"
                 if not hasattr(obj, method_name):
                     errors.append(
                         checks.Error(
-                            "{} must define a {}() method for the {} action.".format(
-                                obj.__class__.__name__,
-                                method_name,
-                                action.method.__name__,
-                            ),
+                            f"{obj.__class__.__name__} must define a {method_name}() method for the {action.method.__name__} action.",
                             obj=obj.__class__,
                             id="admin.E129",
                         )

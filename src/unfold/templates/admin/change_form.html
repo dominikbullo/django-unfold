@@ -7,15 +7,13 @@
     {{ media }}
 {% endblock %}
 
-{% comment %} {% block coltype %}colM{% endblock %} {% endcomment %}
-
 {% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} change-form{% endblock %}
 
 {% if not is_popup %}
     {% block breadcrumbs %}
-        <div class="px-4 lg:px-12">
+        <div class="px-4 lg:px-8">
             <div class="container mb-6 mx-auto -my-3 lg:mb-12">
-                <ul class="flex">
+                <ul class="flex flex-wrap">
                     {% url 'admin:index' as link %}
                     {% trans 'Home' as name %}
                     {% include 'unfold/helpers/breadcrumb_item.html' with link=link name=name %}
@@ -46,7 +44,7 @@
 {% endif %}
 
 {% block nav-global %}{% spaceless %}
-     {% if change and not is_popup %}
+    {% if change and not is_popup %}
         {% block object-tools-items %}
             {% change_form_object_tools %}
         {% endblock %}
@@ -61,21 +59,17 @@
 
 {% block content %}
     <div id="content-main">
-        <form {% if has_file_field %}enctype="multipart/form-data" {% endif %}{% if form_url %}action="{{ form_url }}" {% endif %}method="post" id="{{ opts.model_name }}_form" novalidate>
+        {% block form_before %}{% endblock %}
+
+        {% if adminform.model_admin.change_form_outer_before_template %}
+            {% include adminform.model_admin.change_form_outer_before_template %}
+        {% endif %}
+
+        <form {% if has_file_field %}enctype="multipart/form-data" {% endif %}{% if form_url %}action="{{ form_url }}" {% endif %}method="post" id="{{ opts.model_name }}_form" {% if adminform.model_admin.warn_unsaved_form %}class="warn-unsaved-form"{% endif %} novalidate>
             {% csrf_token %}
 
-            {% if actions_detail %}
-                <div class="bg-gray-50 flex justify-end -mt-6 mb-4 p-3 rounded-md dark:bg-gray-800">
-                    {% for action in actions_detail %}
-                        <a href="{{ action.path }}" class="bg-white text-gray-500 border cursor-pointer flex font-medium items-center px-3 py-2 mr-3 rounded-md shadow-sm text-sm dark:bg-gray-900 dark:border dark:border-gray-700 dark:text-gray-400"
-                            {% for attr_name, attr_value in action.attrs.items %}
-                                {{ attr_name }}="{{ attr_value }}"
-                            {% endfor %}
-                        >
-                            {{ action.title }}
-                        </a>
-                    {% endfor %}
-                </div>
+            {% if adminform.model_admin.change_form_before_template %}
+                {% include adminform.model_admin.change_form_before_template %}
             {% endif %}
 
             {% block form_top %}{% endblock %}
@@ -88,7 +82,6 @@
                 {% if to_field %}
                     <input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">
                 {% endif %}
-
 
                 {% include "unfold/helpers/messages/errornote.html" with errors=errors %}
                 {% include "unfold/helpers/messages/error.html" with errors=adminform.form.non_field_errors %}
@@ -109,10 +102,13 @@
                     {% for inline_admin_formset in inline_admin_formsets %}
                         {% include inline_admin_formset.opts.template %}
                     {% endfor %}
-
                 {% endblock %}
 
                 {% block after_related_objects %}{% endblock %}
+
+                {% if adminform.model_admin.change_form_after_template %}
+                    {% include adminform.model_admin.change_form_after_template %}
+                {% endif %}
 
                 {% block submit_buttons_bottom %}{% submit_row %}{% endblock %}
 
@@ -123,5 +119,11 @@
                 {% prepopulated_fields_js %}
             </div>
         </form>
+
+        {% if adminform.model_admin.change_form_outer_after_template %}
+            {% include adminform.model_admin.change_form_outer_after_template %}
+        {% endif %}
+
+        {% block form_after %}{% endblock %}
     </div>
 {% endblock %}

@@ -1,60 +1,41 @@
 import copy
 from functools import update_wrapper
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from django import forms
 from django.contrib.admin import ModelAdmin as BaseModelAdmin
 from django.contrib.admin import StackedInline as BaseStackedInline
 from django.contrib.admin import TabularInline as BaseTabularInline
 from django.contrib.admin import display, helpers
-from django.contrib.admin.utils import lookup_field
-from django.core.exceptions import ObjectDoesNotExist
+from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 from django.db import models
-from django.db.models import (
-    BLANK_CHOICE_DASH,
-    ForeignObjectRel,
-    JSONField,
-    ManyToManyRel,
-    Model,
-    OneToOneField,
-)
+from django.db.models import BLANK_CHOICE_DASH, Model
 from django.db.models.fields import Field
 from django.db.models.fields.related import ForeignKey, ManyToManyField
 from django.forms import Form
 from django.forms.fields import TypedChoiceField
-from django.forms.models import (
-    ModelChoiceField,
-    ModelMultipleChoiceField,
-)
-from django.forms.utils import flatatt
+from django.forms.models import ModelChoiceField, ModelMultipleChoiceField
 from django.forms.widgets import SelectMultiple
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
-from django.template.defaultfilters import linebreaksbr
 from django.template.response import TemplateResponse
 from django.urls import URLPattern, path, reverse
-from django.utils.html import conditional_escape, format_html
-from django.utils.module_loading import import_string
-from django.utils.safestring import SafeText, mark_safe
-from django.utils.text import capfirst
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from django.views import View
-from unfold.utils import display_for_field
 
 from .checks import UnfoldModelAdminChecks
 from .dataclasses import UnfoldAction
 from .exceptions import UnfoldException
+from .fields import UnfoldAdminField, UnfoldAdminReadonlyField
 from .forms import ActionForm
-from .settings import get_config
 from .typing import FieldsetsType
 from .widgets import (
-    CHECKBOX_LABEL_CLASSES,
-    INPUT_CLASSES,
-    LABEL_CLASSES,
     SELECT_CLASSES,
     UnfoldAdminBigIntegerFieldWidget,
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminEmailInputWidget,
+    UnfoldAdminFileFieldWidget,
     UnfoldAdminImageFieldWidget,
     UnfoldAdminImageSmallFieldWidget,
     UnfoldAdminIntegerFieldWidget,
@@ -62,14 +43,17 @@ from .widgets import (
     UnfoldAdminMoneyWidget,
     UnfoldAdminNullBooleanSelectWidget,
     UnfoldAdminRadioSelectWidget,
+    UnfoldAdminSelectWidget,
     UnfoldAdminSingleDateWidget,
     UnfoldAdminSingleTimeWidget,
     UnfoldAdminSplitDateTimeWidget,
     UnfoldAdminTextareaWidget,
     UnfoldAdminTextInputWidget,
+    UnfoldAdminURLInputWidget,
     UnfoldAdminUUIDInputWidget,
     UnfoldBooleanSwitchWidget,
     UnfoldBooleanWidget,
+    UnfoldForeignKeyRawIdWidget,
 )
 
 try:
@@ -87,8 +71,6 @@ try:
 except ImportError:
     HAS_MONEY = False
 
-checkbox = UnfoldBooleanWidget({"class": "action-select"}, lambda value: False)
-
 FORMFIELD_OVERRIDES = {
     models.DateTimeField: {
         "form_class": forms.SplitDateTimeField,
@@ -98,16 +80,17 @@ FORMFIELD_OVERRIDES = {
     models.TimeField: {"widget": UnfoldAdminSingleTimeWidget},
     models.EmailField: {"widget": UnfoldAdminEmailInputWidget},
     models.CharField: {"widget": UnfoldAdminTextInputWidget},
-    models.URLField: {"widget": UnfoldAdminTextInputWidget},
+    models.URLField: {"widget": UnfoldAdminURLInputWidget},
     models.GenericIPAddressField: {"widget": UnfoldAdminTextInputWidget},
     models.UUIDField: {"widget": UnfoldAdminUUIDInputWidget},
     models.TextField: {"widget": UnfoldAdminTextareaWidget},
     models.NullBooleanField: {"widget": UnfoldAdminNullBooleanSelectWidget},
-    models.BooleanField: {"widget": UnfoldBooleanWidget},
+    models.BooleanField: {"widget": UnfoldBooleanSwitchWidget},
     models.IntegerField: {"widget": UnfoldAdminIntegerFieldWidget},
     models.BigIntegerField: {"widget": UnfoldAdminBigIntegerFieldWidget},
     models.DecimalField: {"widget": UnfoldAdminDecimalFieldWidget},
     models.FloatField: {"widget": UnfoldAdminDecimalFieldWidget},
+    models.FileField: {"widget": UnfoldAdminFileFieldWidget},
     models.ImageField: {"widget": UnfoldAdminImageFieldWidget},
     models.JSONField: {"widget": UnfoldAdminTextareaWidget},
     models.DurationField: {"widget": UnfoldAdminTextInputWidget},
@@ -137,130 +120,11 @@ FORMFIELD_OVERRIDES_INLINE.update(
     }
 )
 
-
-class UnfoldAdminField(helpers.AdminField):
-    def label_tag(self) -> SafeText:
-        classes = []
-
-        # TODO load config from current AdminSite (override Fieldline.__iter__ method)
-        for lang, flag in get_config()["EXTENSIONS"]["modeltranslation"][
-            "flags"
-        ].items():
-            if f"[{lang}]" in self.field.label:
-                self.field.label = self.field.label.replace(f"[{lang}]", flag)
-                break
-
-        contents = conditional_escape(self.field.label)
-
-        if self.is_checkbox:
-            classes.append(" ".join(CHECKBOX_LABEL_CLASSES))
-        else:
-            classes.append(" ".join(LABEL_CLASSES))
-
-        if self.field.field.required:
-            classes.append("required")
-
-        attrs = {"class": " ".join(classes)} if classes else {}
-        required = mark_safe(' <span class="text-red-600">*</span>')
-
-        return self.field.label_tag(
-            contents=mark_safe(contents),
-            attrs=attrs,
-            label_suffix=required if self.field.field.required else "",
-        )
-
+checkbox = UnfoldBooleanWidget(
+    {"class": "action-select", "aria-label": _("Select record")}, lambda value: False
+)
 
 helpers.AdminField = UnfoldAdminField
-
-
-class UnfoldAdminReadonlyField(helpers.AdminReadonlyField):
-    def label_tag(self) -> SafeText:
-        attrs = {
-            "class": " ".join(LABEL_CLASSES + ["mb-2"]),
-        }
-
-        label = self.field["label"]
-
-        return format_html(
-            "<label{}>{}{}</label>",
-            flatatt(attrs),
-            capfirst(label),
-            self.form.label_suffix,
-        )
-
-    def is_json(self) -> bool:
-        field, obj, model_admin = (
-            self.field["field"],
-            self.form.instance,
-            self.model_admin,
-        )
-
-        try:
-            f, attr, value = lookup_field(field, obj, model_admin)
-        except (AttributeError, ValueError, ObjectDoesNotExist):
-            return False
-
-        return isinstance(f, JSONField)
-
-    def contents(self) -> str:
-        contents = self._get_contents()
-        contents = self._preprocess_field(contents)
-        return contents
-
-    def _get_contents(self) -> str:
-        from django.contrib.admin.templatetags.admin_list import _boolean_icon
-
-        field, obj, model_admin = (
-            self.field["field"],
-            self.form.instance,
-            self.model_admin,
-        )
-        try:
-            f, attr, value = lookup_field(field, obj, model_admin)
-        except (AttributeError, ValueError, ObjectDoesNotExist):
-            result_repr = self.empty_value_display
-        else:
-            if field in self.form.fields:
-                widget = self.form[field].field.widget
-                # This isn't elegant but suffices for contrib.auth's
-                # ReadOnlyPasswordHashWidget.
-                if getattr(widget, "read_only", False):
-                    return widget.render(field, value)
-            if f is None:
-                if getattr(attr, "boolean", False):
-                    result_repr = _boolean_icon(value)
-                else:
-                    if hasattr(value, "__html__"):
-                        result_repr = value
-                    else:
-                        result_repr = linebreaksbr(value)
-            else:
-                if isinstance(f.remote_field, ManyToManyRel) and value is not None:
-                    result_repr = ", ".join(map(str, value.all()))
-                elif (
-                    isinstance(f.remote_field, (ForeignObjectRel, OneToOneField))
-                    and value is not None
-                ):
-                    result_repr = self.get_admin_url(f.remote_field, value)
-                else:
-                    result_repr = display_for_field(value, f, self.empty_value_display)
-                    return conditional_escape(result_repr)
-                result_repr = linebreaksbr(result_repr)
-        return conditional_escape(result_repr)
-
-    def _preprocess_field(self, contents: str) -> str:
-        if (
-            hasattr(self.model_admin, "readonly_preprocess_fields")
-            and self.field["field"] in self.model_admin.readonly_preprocess_fields
-        ):
-            func = self.model_admin.readonly_preprocess_fields[self.field["field"]]
-            if isinstance(func, str):
-                contents = import_string(func)(contents)
-            elif callable(func):
-                contents = func(contents)
-
-        return contents
-
 
 helpers.AdminReadonlyField = UnfoldAdminReadonlyField
 
@@ -285,10 +149,9 @@ class ModelAdminMixin:
                     radio_style=self.radio_fields[db_field.name]
                 )
             else:
-                kwargs["widget"] = forms.Select(
-                    attrs={"class": " ".join(SELECT_CLASSES)}
-                )
+                kwargs["widget"] = UnfoldAdminSelectWidget()
 
+        if "choices" not in kwargs:
             kwargs["choices"] = db_field.get_choices(
                 include_blank=db_field.blank, blank_choice=[("", _("Select value"))]
             )
@@ -298,19 +161,19 @@ class ModelAdminMixin:
     def formfield_for_foreignkey(
         self, db_field: ForeignKey, request: HttpRequest, **kwargs
     ) -> Optional[ModelChoiceField]:
+        db = kwargs.get("using")
+
         # Overrides widgets for all related fields
         if "widget" not in kwargs:
             if db_field.name in self.raw_id_fields:
-                kwargs["widget"] = forms.TextInput(
-                    attrs={"class": " ".join(INPUT_CLASSES)}
+                kwargs["widget"] = UnfoldForeignKeyRawIdWidget(
+                    db_field.remote_field, self.admin_site, using=db
                 )
             elif (
                 db_field.name not in self.get_autocomplete_fields(request)
                 and db_field.name not in self.radio_fields
             ):
-                kwargs["widget"] = forms.Select(
-                    attrs={"class": " ".join(SELECT_CLASSES)}
-                )
+                kwargs["widget"] = UnfoldAdminSelectWidget()
                 kwargs["empty_label"] = _("Select value")
 
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
@@ -323,9 +186,7 @@ class ModelAdminMixin:
     ) -> ModelMultipleChoiceField:
         if "widget" not in kwargs:
             if db_field.name in self.raw_id_fields:
-                kwargs["widget"] = forms.TextInput(
-                    attrs={"class": " ".join(INPUT_CLASSES)}
-                )
+                kwargs["widget"] = UnfoldAdminTextInputWidget()
 
         form_field = super().formfield_for_manytomany(db_field, request, **kwargs)
 
@@ -342,9 +203,7 @@ class ModelAdminMixin:
         self, db_field: Field, request: HttpRequest, **kwargs
     ) -> Optional[Field]:
         if "widget" not in kwargs:
-            kwargs["widget"] = forms.NullBooleanSelect(
-                attrs={"class": " ".join(SELECT_CLASSES)}
-            )
+            kwargs["widget"] = UnfoldAdminNullBooleanSelectWidget()
 
         return db_field.formfield(**kwargs)
 
@@ -354,7 +213,14 @@ class ModelAdminMixin:
         if isinstance(db_field, models.BooleanField) and db_field.null is True:
             return self.formfield_for_nullboolean_field(db_field, request, **kwargs)
 
-        return super().formfield_for_dbfield(db_field, request, **kwargs)
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+
+        if formfield and isinstance(formfield.widget, RelatedFieldWidgetWrapper):
+            formfield.widget.template_name = (
+                "unfold/widgets/related_widget_wrapper.html"
+            )
+
+        return formfield
 
 
 class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
@@ -365,8 +231,20 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
     actions_submit_line = ()
     custom_urls = ()
     add_fieldsets = ()
+    list_horizontal_scrollbar_top = False
     list_filter_submit = False
+    list_filter_sheet = True
+    list_fullwidth = False
+    list_disable_select_all = False
+    list_before_template = None
+    list_after_template = None
+    change_form_before_template = None
+    change_form_after_template = None
+    change_form_outer_before_template = None
+    change_form_outer_after_template = None
+    compressed_fields = False
     readonly_preprocess_fields = {}
+    warn_unsaved_form = False
     checks_class = UnfoldModelAdminChecks
 
     @property
@@ -375,13 +253,14 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         additional_media = forms.Media()
 
         for filter in self.list_filter:
-            if not isinstance(filter, (tuple, list)):
-                continue
-
-            if hasattr(filter[1], "form_class") and hasattr(
-                filter[1].form_class, "Media"
+            if (
+                isinstance(filter, (tuple, list))
+                and hasattr(filter[1], "form_class")
+                and hasattr(filter[1].form_class, "Media")
             ):
                 additional_media += forms.Media(filter[1].form_class.Media)
+            elif hasattr(filter, "form_class") and hasattr(filter.form_class, "Media"):
+                additional_media += forms.Media(filter.form_class.Media)
 
         return media + additional_media
 
@@ -391,7 +270,10 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         return super().get_fieldsets(request, obj)
 
     def _filter_unfold_actions_by_permissions(
-        self, request: HttpRequest, actions: List[UnfoldAction]
+        self,
+        request: HttpRequest,
+        actions: List[UnfoldAction],
+        object_id: Optional[Union[int, str]] = None,
     ) -> List[UnfoldAction]:
         """Filter out any Unfold actions that the user doesn't have access to."""
         filtered_actions = []
@@ -399,12 +281,22 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
             if not hasattr(action.method, "allowed_permissions"):
                 filtered_actions.append(action)
                 continue
+
             permission_checks = (
-                getattr(self, "has_%s_permission" % permission)
+                getattr(self, f"has_{permission}_permission")
                 for permission in action.method.allowed_permissions
             )
-            if any(has_permission(request) for has_permission in permission_checks):
-                filtered_actions.append(action)
+
+            if object_id:
+                if any(
+                    has_permission(request, object_id)
+                    for has_permission in permission_checks
+                ):
+                    filtered_actions.append(action)
+            else:
+                if any(has_permission(request) for has_permission in permission_checks):
+                    filtered_actions.append(action)
+
         return filtered_actions
 
     def get_actions_list(self, request: HttpRequest) -> List[UnfoldAction]:
@@ -418,9 +310,11 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         """
         return [self.get_unfold_action(action) for action in self.actions_list or []]
 
-    def get_actions_detail(self, request: HttpRequest) -> List[UnfoldAction]:
+    def get_actions_detail(
+        self, request: HttpRequest, object_id: int
+    ) -> List[UnfoldAction]:
         return self._filter_unfold_actions_by_permissions(
-            request, self._get_base_actions_detail()
+            request, self._get_base_actions_detail(), object_id
         )
 
     def _get_base_actions_detail(self) -> List[UnfoldAction]:
@@ -440,9 +334,11 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         """
         return [self.get_unfold_action(action) for action in self.actions_row or []]
 
-    def get_actions_submit_line(self, request: HttpRequest) -> List[UnfoldAction]:
+    def get_actions_submit_line(
+        self, request: HttpRequest, object_id: int
+    ) -> List[UnfoldAction]:
         return self._filter_unfold_actions_by_permissions(
-            request, self._get_base_actions_submit_line()
+            request, self._get_base_actions_submit_line(), object_id
         )
 
     def _get_base_actions_submit_line(self) -> List[UnfoldAction]:
@@ -531,29 +427,23 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
         if extra_context is None:
             extra_context = {}
 
-        new_formfield_overrides = copy.deepcopy(self.formfield_overrides)
-        new_formfield_overrides.update(
-            {models.BooleanField: {"widget": UnfoldBooleanSwitchWidget}}
-        )
-
-        self.formfield_overrides = new_formfield_overrides
-
         actions = []
         if object_id:
-            for action in self.get_actions_detail(request):
+            for action in self.get_actions_detail(request, object_id):
                 actions.append(
                     {
                         "title": action.description,
                         "attrs": action.method.attrs,
                         "path": reverse(
-                            f"admin:{action.action_name}", args=(object_id,)
+                            f"{self.admin_site.name}:{action.action_name}",
+                            args=(object_id,),
                         ),
                     }
                 )
 
         extra_context.update(
             {
-                "actions_submit_line": self.get_actions_submit_line(request),
+                "actions_submit_line": self.get_actions_submit_line(request, object_id),
                 "actions_detail": actions,
             }
         )
@@ -570,7 +460,7 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
             {
                 "title": action.description,
                 "attrs": action.method.attrs,
-                "path": reverse(f"admin:{action.action_name}"),
+                "path": reverse(f"{self.admin_site.name}:{action.action_name}"),
             }
             for action in self.get_actions_list(request)
         ]
@@ -579,12 +469,17 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
             {
                 "title": action.description,
                 "attrs": action.method.attrs,
-                "raw_path": f"admin:{action.action_name}",
+                "raw_path": f"{self.admin_site.name}:{action.action_name}",
             }
             for action in self.get_actions_row(request)
         ]
 
-        extra_context.update({"actions_list": actions, "actions_row": actions_row})
+        extra_context.update(
+            {
+                "actions_list": actions,
+                "actions_row": actions_row,
+            }
+        )
 
         return super().changelist_view(request, extra_context)
 
@@ -601,6 +496,7 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
             method=method,
             description=self._get_action_description(method, action),
             path=self._get_action_url(method, action),
+            attrs=method.attrs if hasattr(method, "attrs") else None,
         )
 
     @staticmethod
@@ -619,7 +515,7 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
     ) -> None:
         super().save_model(request, obj, form, change)
 
-        for action in self.get_actions_submit_line(request):
+        for action in self.get_actions_submit_line(request, obj.pk):
             if action.action_name not in request.POST:
                 continue
 
@@ -672,8 +568,12 @@ class ModelAdmin(ModelAdminMixin, BaseModelAdmin):
 class TabularInline(ModelAdminMixin, BaseTabularInline):
     formfield_overrides = FORMFIELD_OVERRIDES_INLINE
     readonly_preprocess_fields = {}
+    ordering_field = None
+    hide_ordering_field = False
 
 
 class StackedInline(ModelAdminMixin, BaseStackedInline):
     formfield_overrides = FORMFIELD_OVERRIDES_INLINE
     readonly_preprocess_fields = {}
+    ordering_field = None
+    hide_ordering_field = False

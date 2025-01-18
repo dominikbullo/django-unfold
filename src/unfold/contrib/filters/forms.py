@@ -1,7 +1,68 @@
 from django import forms
+from django.forms import ChoiceField, MultipleChoiceField
 from django.utils.translation import gettext_lazy as _
 
-from ...widgets import INPUT_CLASSES, UnfoldAdminSplitDateTimeVerticalWidget
+from ...widgets import (
+    INPUT_CLASSES,
+    UnfoldAdminSelectMultipleWidget,
+    UnfoldAdminSelectWidget,
+    UnfoldAdminSplitDateTimeVerticalWidget,
+    UnfoldAdminTextInputWidget,
+)
+
+
+class SearchForm(forms.Form):
+    def __init__(self, name, label, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields[name] = forms.CharField(
+            label=label,
+            required=False,
+            widget=UnfoldAdminTextInputWidget,
+        )
+
+
+class DropdownForm(forms.Form):
+    widget = UnfoldAdminSelectWidget(
+        attrs={
+            "data-theme": "admin-autocomplete",
+            "class": "unfold-admin-autocomplete admin-autocomplete",
+        }
+    )
+    field = ChoiceField
+
+    def __init__(self, name, label, choices, multiple=False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        if multiple:
+            self.widget = UnfoldAdminSelectMultipleWidget(
+                attrs={
+                    "data-theme": "admin-autocomplete",
+                    "class": "unfold-admin-autocomplete admin-autocomplete",
+                }
+            )
+            self.field = MultipleChoiceField
+
+        self.fields[name] = self.field(
+            label=label,
+            required=False,
+            choices=choices,
+            widget=self.widget,
+        )
+
+    class Media:
+        js = (
+            "admin/js/vendor/jquery/jquery.js",
+            "admin/js/vendor/select2/select2.full.js",
+            "admin/js/jquery.init.js",
+            "unfold/js/select2.init.js",
+        )
+        css = {
+            "screen": (
+                "admin/css/vendor/select2/select2.css",
+                "admin/css/autocomplete.css",
+            ),
+        }
 
 
 class SingleNumericForm(forms.Form):

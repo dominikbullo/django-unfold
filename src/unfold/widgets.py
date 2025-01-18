@@ -1,6 +1,7 @@
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from django.contrib.admin.options import VERTICAL
+from django.contrib.admin.sites import AdminSite
 from django.contrib.admin.widgets import (
     AdminBigIntegerFieldWidget,
     AdminDateWidget,
@@ -12,14 +13,21 @@ from django.contrib.admin.widgets import (
     AdminTextareaWidget,
     AdminTextInputWidget,
     AdminTimeWidget,
+    AdminURLFieldWidget,
     AdminUUIDInputWidget,
+    ForeignKeyRawIdWidget,
+    RelatedFieldWidgetWrapper,
 )
+from django.db.models.fields.reverse_related import ForeignObjectRel
 from django.forms import (
     CheckboxInput,
+    CheckboxSelectMultiple,
     MultiWidget,
     NullBooleanSelect,
     NumberInput,
+    PasswordInput,
     Select,
+    SelectMultiple,
 )
 from django.utils.translation import gettext_lazy as _
 
@@ -27,27 +35,31 @@ from .exceptions import UnfoldException
 
 LABEL_CLASSES = [
     "block",
-    "font-medium",
+    "font-semibold",
     "mb-2",
-    "text-gray-900",
+    "text-font-important-light",
     "text-sm",
-    "dark:text-gray-200",
+    "dark:text-font-important-dark",
 ]
 
 CHECKBOX_LABEL_CLASSES = [
+    "font-semibold",
     "ml-2",
     "text-sm",
-    "text-gray-900",
-    "dark:text-gray-200",
+    "text-font-important-light",
+    "dark:text-font-important-dark",
 ]
 
 BASE_CLASSES = [
     "border",
+    "border-base-200",
     "bg-white",
     "font-medium",
-    "rounded-md",
+    "min-w-20",
+    "placeholder-base-400",
+    "rounded",
     "shadow-sm",
-    "text-gray-500",
+    "text-font-default-light",
     "text-sm",
     "focus:ring",
     "focus:ring-primary-300",
@@ -55,9 +67,9 @@ BASE_CLASSES = [
     "focus:outline-none",
     "group-[.errors]:border-red-600",
     "group-[.errors]:focus:ring-red-200",
-    "dark:bg-gray-900",
-    "dark:border-gray-700",
-    "dark:text-gray-400",
+    "dark:bg-base-900",
+    "dark:border-base-700",
+    "dark:text-font-default-dark",
     "dark:focus:border-primary-600",
     "dark:focus:ring-primary-700",
     "dark:focus:ring-opacity-50",
@@ -74,21 +86,21 @@ BASE_INPUT_CLASSES = [
 
 INPUT_CLASSES = [*BASE_INPUT_CLASSES, "max-w-2xl"]
 
+DATETIME_CLASSES = [*BASE_INPUT_CLASSES, "min-w-52"]
+
 COLOR_CLASSES = [*BASE_CLASSES, "h-9.5", "px-2", "py-2", "w-32"]
 
-INPUT_CLASSES_READONLY = [*BASE_INPUT_CLASSES, "bg-gray-50"]
+INPUT_CLASSES_READONLY = [*BASE_INPUT_CLASSES, "bg-base-50"]
 
 TEXTAREA_CLASSES = [
     *BASE_INPUT_CLASSES,
     "max-w-4xl",
     "appearance-none",
     "expandable",
-    "overflow-hidden",
     "transition",
     "transition-height",
     "duration-75",
     "ease-in-out",
-    "resize-none",
 ]
 
 TEXTAREA_EXPANDABLE_CLASSES = [
@@ -105,29 +117,28 @@ SELECT_CLASSES = [
     "pr-8",
     "max-w-2xl",
     "appearance-none",
-    "truncate",
 ]
 
 PROSE_CLASSES = [
     "font-normal",
+    "whitespace-normal",
     "prose-sm",
     "prose-blockquote:border-l-4",
     "prose-blockquote:not-italic",
-    "prose-pre:bg-gray-50",
+    "prose-pre:bg-base-50",
     "prose-pre:rounded",
     "prose-headings:font-medium",
     "prose-a:text-primary-600",
-    "prose-a:underline",
     "prose-headings:font-medium",
-    "prose-headings:text-gray-700",
+    "prose-headings:text-base-700",
     "prose-ol:list-decimal",
     "prose-ul:list-disc",
-    "prose-strong:text-gray-700",
-    "dark:prose-pre:bg-gray-800",
-    "dark:prose-blockquote:border-gray-700",
-    "dark:prose-blockquote:text-gray-400",
-    "dark:prose-headings:text-gray-200",
-    "dark:prose-strong:text-gray-200",
+    "prose-strong:text-base-700",
+    "dark:prose-pre:bg-base-800",
+    "dark:prose-blockquote:border-base-700",
+    "dark:prose-blockquote:text-base-300",
+    "dark:prose-headings:text-base-200",
+    "dark:prose-strong:text-base-200",
 ]
 
 CHECKBOX_CLASSES = [
@@ -135,16 +146,16 @@ CHECKBOX_CLASSES = [
     "bg-white",
     "block",
     "border",
-    "border-gray-300",
+    "border-base-300",
     "cursor-pointer",
     "h-4",
     "relative",
-    "rounded",
+    "rounded-[4px]",
     "shadow-sm",
     "w-4",
-    "hover:border-gray-400",
-    "dark:bg-gray-700",
-    "dark:border-gray-500",
+    "hover:border-base-400",
+    "dark:bg-base-700",
+    "dark:border-base-500",
     "dark:after:checked:text-white",
     "focus:outline",
     "focus:outline-1",
@@ -164,7 +175,7 @@ CHECKBOX_CLASSES = [
     "after:text-white",
     "after:transition-all",
     "after:w-4",
-    "after:dark:text-gray-700",
+    "after:dark:text-base-700",
     "checked:bg-primary-600",
     "checked:border-primary-600",
     "checked:transition-all",
@@ -176,21 +187,21 @@ RADIO_CLASSES = [
     "bg-white",
     "block",
     "border",
-    "border-gray-300",
+    "border-base-300",
     "cursor-pointer",
     "h-4",
     "relative",
     "rounded-full",
     "w-4",
-    "dark:bg-gray-700",
-    "dark:border-gray-500",
-    "hover:border-gray-400",
+    "dark:bg-base-700",
+    "dark:border-base-500",
+    "hover:border-base-400",
     "focus:outline",
     "focus:outline-1",
     "focus:outline-offset-2",
     "focus:outline-primary-500",
     "after:absolute",
-    "after:bg-white",
+    "after:bg-transparent",
     "after:content-['']",
     "after:flex",
     "after:h-2",
@@ -206,24 +217,26 @@ RADIO_CLASSES = [
     "after:-translate-y-1/2",
     "after:text-sm",
     "after:w-2",
-    "after:dark:text-gray-700",
+    "after:dark:text-base-700",
     "after:dark:bg-transparent",
     "checked:bg-primary-600",
     "checked:border-primary-600",
     "checked:transition-all",
     "checked:after:bg-white",
-    "checked:after:dark:bg-gray-200",
+    "checked:after:dark:bg-base-900",
+    "checked:hover:border-base-900/20",
 ]
 
 SWITCH_CLASSES = [
     "appearance-none",
-    "bg-gray-300",
+    "bg-base-300",
     "cursor-pointer",
     "h-5",
     "relative",
     "rounded-full",
     "transition-all",
     "w-8",
+    "min-w-8",
     "after:absolute",
     "after:bg-white",
     "after:content-['']",
@@ -234,13 +247,21 @@ SWITCH_CLASSES = [
     "after:left-1",
     "after:top-1",
     "after:w-3",
-    "checked:bg-primary-600",
+    "checked:bg-green-500",
     "checked:after:left-4",
-    "dark:bg-gray-600",
+    "dark:bg-base-600",
+    "dark:checked:bg-green-700",
 ]
 
 
 class UnfoldAdminTextInputWidget(AdminTextInputWidget):
+    def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__(attrs={"class": " ".join(INPUT_CLASSES), **(attrs or {})})
+
+
+class UnfoldAdminURLInputWidget(AdminURLFieldWidget):
+    template_name = "unfold/widgets/url.html"
+
     def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
         super().__init__(attrs={"class": " ".join(INPUT_CLASSES), **(attrs or {})})
 
@@ -285,13 +306,24 @@ class FileFieldMixin:
     def get_context(self, name, value, attrs):
         widget = super().get_context(name, value, attrs)
         widget["widget"].update(
-            {"class": " ".join([*CHECKBOX_CLASSES, *["form-check-input"]])}
+            {
+                "class": " ".join([*CHECKBOX_CLASSES, *["form-check-input"]]),
+                "file_input_class": " ".join(
+                    [
+                        self.attrs.get("class", ""),
+                        *[
+                            "opacity-0",
+                            "pointer-events-none",
+                        ],
+                    ]
+                ),
+            }
         )
         return widget
 
 
 class UnfoldAdminImageFieldWidget(FileFieldMixin, AdminFileWidget):
-    pass
+    template_name = "unfold/widgets/clearable_file_input.html"
 
 
 class UnfoldAdminFileFieldWidget(FileFieldMixin, AdminFileWidget):
@@ -303,11 +335,13 @@ class UnfoldAdminImageSmallFieldWidget(FileFieldMixin, AdminFileWidget):
 
 
 class UnfoldAdminDateWidget(AdminDateWidget):
+    template_name = "unfold/widgets/date.html"
+
     def __init__(
         self, attrs: Optional[Dict[str, Any]] = None, format: Optional[str] = None
     ) -> None:
         attrs = {
-            "class": "vDateField " + " ".join(INPUT_CLASSES),
+            "class": "vDateField " + " ".join(DATETIME_CLASSES),
             "size": "10",
             **(attrs or {}),
         }
@@ -321,7 +355,7 @@ class UnfoldAdminSingleDateWidget(AdminDateWidget):
         self, attrs: Optional[Dict[str, Any]] = None, format: Optional[str] = None
     ) -> None:
         attrs = {
-            "class": "vDateField " + " ".join(INPUT_CLASSES),
+            "class": "vDateField " + " ".join(DATETIME_CLASSES),
             "size": "10",
             **(attrs or {}),
         }
@@ -329,11 +363,13 @@ class UnfoldAdminSingleDateWidget(AdminDateWidget):
 
 
 class UnfoldAdminTimeWidget(AdminTimeWidget):
+    template_name = "unfold/widgets/time.html"
+
     def __init__(
         self, attrs: Optional[Dict[str, Any]] = None, format: Optional[str] = None
     ) -> None:
         attrs = {
-            "class": "vTimeField " + " ".join(INPUT_CLASSES),
+            "class": "vTimeField " + " ".join(DATETIME_CLASSES),
             "size": "8",
             **(attrs or {}),
         }
@@ -347,7 +383,7 @@ class UnfoldAdminSingleTimeWidget(AdminTimeWidget):
         self, attrs: Optional[Dict[str, Any]] = None, format: Optional[str] = None
     ) -> None:
         attrs = {
-            "class": "vTimeField " + " ".join(INPUT_CLASSES),
+            "class": "vTimeField " + " ".join(DATETIME_CLASSES),
             "size": "8",
             **(attrs or {}),
         }
@@ -356,6 +392,20 @@ class UnfoldAdminSingleTimeWidget(AdminTimeWidget):
 
 class UnfoldAdminTextareaWidget(AdminTextareaWidget):
     template_name = "unfold/widgets/textarea.html"
+
+    def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
+        attrs = attrs or {}
+
+        super().__init__(
+            attrs={
+                "class": "vLargeTextField " + " ".join(TEXTAREA_CLASSES),
+                **(attrs or {}),
+            }
+        )
+
+
+class UnfoldAdminExpandableTextareaWidget(AdminTextareaWidget):
+    template_name = "unfold/widgets/textarea_expandable.html"
 
     def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
         attrs = attrs or {}
@@ -374,6 +424,8 @@ class UnfoldAdminTextareaWidget(AdminTextareaWidget):
 
 
 class UnfoldAdminSplitDateTimeWidget(AdminSplitDateTime):
+    template_name = "unfold/widgets/split_datetime.html"
+
     def __init__(self, attrs: Optional[Dict[str, Any]] = None) -> None:
         widgets = [UnfoldAdminDateWidget, UnfoldAdminTimeWidget]
         MultiWidget.__init__(self, widgets, attrs)
@@ -433,20 +485,35 @@ class UnfoldAdminBigIntegerFieldWidget(AdminBigIntegerFieldWidget):
 
 
 class UnfoldAdminNullBooleanSelectWidget(NullBooleanSelect):
-    pass
-
-
-class UnfoldAdminSelect(Select):
-    def __init__(self, attrs=None, choices=()):
+    def __init__(self, attrs=None):
         if attrs is None:
             attrs = {}
 
         attrs["class"] = " ".join(SELECT_CLASSES)
+        super().__init__(attrs)
+
+
+class UnfoldAdminSelectWidget(Select):
+    def __init__(self, attrs=None, choices=()):
+        if attrs is None:
+            attrs = {}
+
+        attrs["class"] = " ".join([*SELECT_CLASSES, attrs.get("class", "")])
+        super().__init__(attrs, choices)
+
+
+class UnfoldAdminSelectMultipleWidget(SelectMultiple):
+    def __init__(self, attrs=None, choices=()):
+        if attrs is None:
+            attrs = {}
+
+        attrs["class"] = " ".join([*SELECT_CLASSES, attrs.get("class", "")])
         super().__init__(attrs, choices)
 
 
 class UnfoldAdminRadioSelectWidget(AdminRadioSelect):
-    option_template_name = "admin/widgets/radio_option.html"
+    template_name = "unfold/widgets/radio.html"
+    option_template_name = "unfold/widgets/radio_option.html"
 
     def __init__(self, radio_style: Optional[int] = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -455,12 +522,22 @@ class UnfoldAdminRadioSelectWidget(AdminRadioSelect):
             radio_style = VERTICAL
 
         self.radio_style = radio_style
-        self.attrs = {"class": " ".join(RADIO_CLASSES)}
+        self.attrs["class"] = " ".join([*RADIO_CLASSES, self.attrs.get("class", "")])
 
     def get_context(self, *args, **kwargs) -> Dict[str, Any]:
         context = super().get_context(*args, **kwargs)
         context.update({"radio_style": self.radio_style})
         return context
+
+
+class UnfoldAdminCheckboxSelectMultiple(CheckboxSelectMultiple):
+    template_name = "unfold/widgets/radio.html"
+    option_template_name = "unfold/widgets/radio_option.html"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.attrs = {"class": " ".join(CHECKBOX_CLASSES)}
 
 
 try:
@@ -473,7 +550,12 @@ try:
         def __init__(self, *args, **kwargs):
             super().__init__(
                 amount_widget=UnfoldAdminTextInputWidget,
-                currency_widget=UnfoldAdminSelect(choices=CURRENCY_CHOICES),
+                currency_widget=UnfoldAdminSelectWidget(
+                    choices=CURRENCY_CHOICES,
+                    attrs={
+                        "aria-label": _("Select currency"),
+                    },
+                ),
             )
 
 except ImportError:
@@ -490,7 +572,7 @@ class UnfoldBooleanWidget(CheckboxInput):
         if attrs is None:
             attrs = {}
 
-        return super().__init__(
+        super().__init__(
             {
                 **(attrs or {}),
                 "class": " ".join(CHECKBOX_CLASSES + [attrs.get("class", "")]),
@@ -503,6 +585,34 @@ class UnfoldBooleanSwitchWidget(CheckboxInput):
     def __init__(
         self, attrs: Optional[Dict[str, Any]] = None, check_test: Callable = None
     ) -> None:
-        return super().__init__(
+        super().__init__(
             attrs={"class": " ".join(SWITCH_CLASSES), **(attrs or {})}, check_test=None
+        )
+
+
+class UnfoldRelatedFieldWidgetWrapper(RelatedFieldWidgetWrapper):
+    template_name = "unfold/widgets/related_widget_wrapper.html"
+
+
+class UnfoldForeignKeyRawIdWidget(ForeignKeyRawIdWidget):
+    template_name = "unfold/widgets/foreign_key_raw_id.html"
+
+    def __init__(
+        self,
+        rel: ForeignObjectRel,
+        admin_site: AdminSite,
+        attrs: Optional[Dict] = None,
+        using: Optional[Any] = None,
+    ) -> None:
+        attrs = {
+            "class": " ".join(["vForeignKeyRawIdAdminField"] + INPUT_CLASSES),
+            **(attrs or {}),
+        }
+        super().__init__(rel, admin_site, attrs, using)
+
+
+class UnfoldAdminPasswordInput(PasswordInput):
+    def __init__(self, attrs=None, render_value=False):
+        super().__init__(
+            {"class": " ".join(INPUT_CLASSES), **(attrs or {})}, render_value
         )

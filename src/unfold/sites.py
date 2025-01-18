@@ -1,5 +1,6 @@
 from http import HTTPStatus
 from typing import Any, Callable, Dict, List, Optional, Union
+from urllib.parse import parse_qs, urlparse
 
 from django.contrib.admin import AdminSite
 from django.contrib.auth import REDIRECT_FIELD_NAME
@@ -7,9 +8,20 @@ from django.core.validators import EMPTY_VALUES
 from django.http import HttpRequest, HttpResponse
 from django.template.response import TemplateResponse
 from django.urls import URLPattern, path, reverse, reverse_lazy
+from django.utils.decorators import method_decorator
 from django.utils.functional import lazy
 from django.utils.module_loading import import_string
+from django.views.decorators.cache import never_cache
 
+try:
+    from django.contrib.auth.decorators import login_not_required
+except ImportError:
+
+    def login_not_required(func: Callable) -> Callable:
+        return func
+
+
+from .dataclasses import Favicon
 from .settings import get_config
 from .utils import hex_to_rgb
 from .widgets import CHECKBOX_CLASSES, INPUT_CLASSES
@@ -37,14 +49,23 @@ class UnfoldAdminSite(AdminSite):
             self.site_url = get_config(self.settings_name)["SITE_URL"]
 
     def get_urls(self) -> List[URLPattern]:
-        urlpatterns = [
-            path("search/", self.admin_view(self.search), name="search"),
-            path(
-                "toggle-sidebar/",
-                self.admin_view(self.toggle_sidebar),
-                name="toggle_sidebar",
-            ),
-        ] + super().get_urls()
+        extra_urls = []
+
+        if hasattr(self, "extra_urls") and callable(self.extra_urls):
+            extra_urls = self.extra_urls()
+
+        urlpatterns = (
+            [
+                path("search/", self.admin_view(self.search), name="search"),
+                path(
+                    "toggle-sidebar/",
+                    self.admin_view(self.toggle_sidebar),
+                    name="toggle_sidebar",
+                ),
+            ]
+            + extra_urls
+            + super().get_urls()
+        )
 
         return urlpatterns
 
@@ -66,18 +87,26 @@ class UnfoldAdminSite(AdminSite):
                 "site_symbol": self._get_value(
                     get_config(self.settings_name)["SITE_SYMBOL"], request
                 ),
+                "site_favicons": self._process_favicons(
+                    request, get_config(self.settings_name)["SITE_FAVICONS"]
+                ),
                 "show_history": get_config(self.settings_name)["SHOW_HISTORY"],
                 "show_view_on_site": get_config(self.settings_name)[
                     "SHOW_VIEW_ON_SITE"
                 ],
+                "show_languages": get_config(self.settings_name)["SHOW_LANGUAGES"],
                 "colors": self._process_colors(
                     get_config(self.settings_name)["COLORS"]
+                ),
+                "border_radius": get_config(self.settings_name).get(
+                    "BORDER_RADIUS", "6px"
                 ),
                 "tab_list": self.get_tabs_list(request),
                 "styles": [
                     self._get_value(style, request)
                     for style in get_config(self.settings_name)["STYLES"]
                 ],
+                "theme": get_config(self.settings_name).get("THEME"),
                 "scripts": [
                     self._get_value(script, request)
                     for script in get_config(self.settings_name)["SCRIPTS"]
@@ -102,6 +131,9 @@ class UnfoldAdminSite(AdminSite):
                 context.update({"environment": callback(request)})
             except ImportError:
                 pass
+
+        if hasattr(self, "extra_context") and callable(self.extra_context):
+            return self.extra_context(context, request)
 
         return context
 
@@ -173,6 +205,8 @@ class UnfoldAdminSite(AdminSite):
             },
         )
 
+    @method_decorator(never_cache)
+    @login_not_required
     def login(
         self, request: HttpRequest, extra_context: Optional[Dict[str, Any]] = None
     ) -> HttpResponse:
@@ -204,7 +238,7 @@ class UnfoldAdminSite(AdminSite):
 
         from .forms import AdminOwnPasswordChangeForm
 
-        url = reverse("admin:password_change_done", current_app=self.name)
+        url = reverse(f"{self.name}:password_change_done", current_app=self.name)
         defaults = {
             "form_class": AdminOwnPasswordChangeForm,
             "success_url": url,
@@ -217,27 +251,20 @@ class UnfoldAdminSite(AdminSite):
 
     def get_sidebar_list(self, request: HttpRequest) -> List[Dict[str, Any]]:
         navigation = get_config(self.settings_name)["SIDEBAR"].get("navigation", [])
+        tabs = get_config(self.settings_name)["TABS"]
         results = []
-
-        def _get_is_active(link: str) -> bool:
-            if not isinstance(link, str):
-                link = str(link)
-
-            if link in request.path and link != reverse_lazy("admin:index"):
-                return True
-            elif link == request.path == reverse_lazy("admin:index"):
-                return True
-
-            return False
 
         for group in navigation:
             allowed_items = []
 
             for item in group["items"]:
                 item["active"] = False
-                item["active"] = _get_is_active(item["link"])
+                item["active"] = self._get_is_active(
+                    request, item.get("link_callback") or item["link"]
+                )
 
-                for tab in get_config(self.settings_name)["TABS"]:
+                # Checks if any tab item is active and then marks the sidebar link as active
+                for tab in tabs:
                     has_primary_link = False
                     has_tab_link_active = False
 
@@ -246,7 +273,9 @@ class UnfoldAdminSite(AdminSite):
                             has_primary_link = True
                             continue
 
-                        if _get_is_active(tab_item["link"]):
+                        if self._get_is_active(
+                            request, tab_item.get("link_callback") or tab_item["link"]
+                        ):
                             has_tab_link_active = True
                             break
 
@@ -254,7 +283,7 @@ class UnfoldAdminSite(AdminSite):
                         item["active"] = True
 
                 if isinstance(item["link"], Callable):
-                    item["link"] = item["link"](request)
+                    item["link_callback"] = lazy(item["link"])(request)
 
                 # Permission callback
                 item["has_permission"] = self._call_permission_callback(
@@ -265,7 +294,7 @@ class UnfoldAdminSite(AdminSite):
                 if "badge" in item and isinstance(item["badge"], str):
                     try:
                         callback = import_string(item["badge"])
-                        item["badge"] = lazy(callback)(request)
+                        item["badge_callback"] = lazy(callback)(request)
                     except ImportError:
                         pass
 
@@ -289,8 +318,11 @@ class UnfoldAdminSite(AdminSite):
                 )
 
                 if isinstance(item["link"], Callable):
-                    item["link"] = item["link"](request)
+                    item["link_callback"] = lazy(item["link"])(request)
 
+                item["active"] = self._get_is_active(
+                    request, item.get("link_callback") or item["link"], True
+                )
                 allowed_items.append(item)
 
             tab["items"] = allowed_items
@@ -353,6 +385,19 @@ class UnfoldAdminSite(AdminSite):
 
         return target
 
+    def _process_favicons(
+        self, request: HttpRequest, favicons: List[Dict]
+    ) -> List[Favicon]:
+        return [
+            Favicon(
+                href=self._get_value(item["href"], request),
+                rel=item.get("rel"),
+                sizes=item.get("sizes"),
+                type=item.get("type"),
+            )
+            for item in favicons
+        ]
+
     def _process_colors(
         self, colors: Dict[str, Dict[str, str]]
     ) -> Dict[str, Dict[str, str]]:
@@ -364,3 +409,30 @@ class UnfoldAdminSite(AdminSite):
                 colors[name][weight] = " ".join(str(item) for item in hex_to_rgb(value))
 
         return colors
+
+    def _get_is_active(
+        self, request: HttpRequest, link: str, is_tab: bool = False
+    ) -> bool:
+        if not isinstance(link, str):
+            link = str(link)
+
+        index_path = reverse_lazy(f"{self.name}:index")
+        link_path = urlparse(link).path
+
+        # Dashboard
+        if link_path == request.path == index_path:
+            return True
+
+        if link_path in request.path and link_path != index_path:
+            query_params = parse_qs(urlparse(link).query)
+            request_params = parse_qs(request.GET.urlencode())
+
+            # In case of tabs, we need to check if the query params are the same
+            if is_tab and not all(
+                request_params.get(k) == v for k, v in query_params.items()
+            ):
+                return False
+
+            return True
+
+        return False
